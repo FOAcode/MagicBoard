@@ -1,0 +1,2970 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MagicBoard</title>
+  <script src="jszip.min.js"></script>
+<style>
+  :root{
+    --toolbar-h: 38px;
+    --accent:#2b6cb0;
+    --bg:#f6f7fb;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;}
+  body{display:flex;flex-direction:column;background:var(--bg);color:#111;}
+  .toolbar{
+    height:var(--toolbar-h);
+    display:flex;align-items:center;gap:8px;
+    padding: 4px 12px;
+    background:#fff;border-bottom:1px solid #e6e9ef;
+    box-shadow:0 1px 0 rgba(16,24,40,0.02);
+    box-sizing: border-box;
+  }
+  .tool-btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding: 4px 8px;
+    border-radius:8px;border:1px solid transparent;
+    cursor:pointer;background:transparent;font-weight:600;color:#2c3e50;
+  }
+
+  /* Modernized Undo / Redo buttons */
+  #undo-btn, #redo-btn {
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: all 150ms ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+  }
+
+  #undo-btn:hover, #redo-btn:hover {
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+  }
+
+  #undo-btn:disabled, #redo-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* SVG size + color inheritance */
+  #undo-btn svg, #redo-btn svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    fill: none;
+  }
+
+  /* Icon-only toolbar buttons (compact square) */
+  .tool-btn.icon-only{ padding:6px; width:36px; height:32px; justify-content:center; }
+  .tool-btn.icon-only svg{ width:18px;height:18px; display:block }
+
+  /* Text toolbar quick buttons visuals */
+  #tb-text-bold{ font-weight:700; }
+  #tb-text-italic{ font-style:italic; }
+  #tb-text-underline{ text-decoration: underline; text-decoration-thickness: 2px; }
+  #tb-text-crossed{ text-decoration: line-through; text-decoration-thickness: 2px; }
+  .tool-btn.active{background:linear-gradient(180deg,#EEF6FF,#E6F1FF);border-color:#cfe6ff;color:var(--accent);}
+  .tool-btn:hover{background:#f4f7fb}
+  .toolbar .spacer{flex:1}
+  
+  .tool-btn-group {
+    display: inline-flex;
+    align-items: center;
+  }
+  .tool-btn-group .tool-btn {
+    margin: 0;
+  }
+  .tool-btn-group .tool-btn:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right-width: 0.5px;
+  }
+  .tool-btn-group .tool-btn:last-child {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left-width: 0.5px;
+    padding: 4px 6px;
+  }
+  .tool-btn-group.active .tool-btn {
+    background: linear-gradient(180deg,#EEF6FF,#E6F1FF);
+    border-color: #cfe6ff;
+    color: var(--accent);
+  }
+  .tool-btn-group .tool-btn:hover {
+    background: #f4f7fb;
+  }
+  .tool-btn-group.active .tool-btn:hover {
+      background: linear-gradient(180deg,#dbe9ff,#d8e7ff);
+  }
+
+  .app{
+    display:flex;flex:1;overflow:hidden;height:calc(100vh - var(--toolbar-h));
+  }
+  .board-wrap{flex:1;position:relative;display:flex;flex-direction:column;}
+  /* allow panning when zoomed */
+  .board-wrap { overflow: auto; }
+  .board{
+    position:relative;flex:1;margin:12px;background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;overflow:hidden;
+    box-shadow:0 4px 14px rgba(2,6,23,0.06);border:1px solid #e9eef6;
+  }
+  /* scale from top-left for predictable math when focal-zooming */
+  .board { transform-origin: 0 0; }
+  .board-grid{
+    position:absolute;inset:0;background-image:
+      linear-gradient(transparent 23px, rgba(0,0,0,0.02) 24px),
+      linear-gradient(90deg, transparent 23px, rgba(0,0,0,0.02) 24px);
+    background-size:24px 24px;opacity:0.06;pointer-events:none;
+  }
+  
+  .item{
+    position:absolute;touch-action:none;user-select:none;box-sizing:border-box;
+  }
+  .item.selected{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px;}
+  .item img{display:block;max-width:100%;height:auto;pointer-events:none;user-select:none;border-radius:6px;}
+  /* When an image is displayed larger than its natural size we can apply pixelation */
+  .item img.pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; }
+  .text-item{
+    padding:6px 8px;min-width:50px;min-height:24px;
+    background: transparent;
+    border-radius:6px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+    overflow: hidden;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+  }
+  .text-item[contenteditable="true"]{outline:none;border:1px dashed rgba(0,0,0,0.08);background:#fff;}
+  .handle{
+    position:absolute;width:12px;height:12px;border-radius:3px;background:#fff;border:1px solid #ccc;box-shadow:0 1px 0 rgba(0,0,0,0.08);
+    right:-7px;bottom:-7px;cursor:nwse-resize;display:none;
+  }
+  .item.selected .handle{display:block;}
+
+  /* --- MODIFIED: SVG is now a click-through container --- */
+  svg.board-strokes{
+    position:absolute;left:0;top:0;width:100%;height:100%;
+    pointer-events:auto; /* This will be toggled by JS */
+    overflow:visible;
+    z-index: 0; /* Base z-index */
+  }
+  
+  /* --- NEW: Style for individual stroke SVG wrappers --- */
+  .stroke-wrapper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none; /* Wrapper is click-through */
+  }
+  .stroke-wrapper.selected {
+    outline: 2px solid var(--accent); /* Show selection on wrapper */
+    outline-offset: 2px;
+  }
+  .stroke-wrapper g,
+  .stroke-wrapper path {
+    pointer-events: auto; /* Strokes inside are clickable */
+  }
+  /* --- END NEW --- */
+
+
+  .stroke {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  /* Invisible wider path used as a hit target for thin strokes */
+  .stroke-hit {
+    stroke: transparent; /* invisible but receives pointer events */
+    fill: none;
+    pointer-events: stroke;
+  }
+
+  /* allow selecting an individual stroke path */
+  .stroke.selected {
+    opacity: 0.7;
+    stroke: #e53e3e !important;
+  }
+
+  /* --- MODIFIED: Selection style now targets wrapper --- */
+  .stroke-wrapper.selected .stroke,
+  .stroke-wrapper.selected path {
+    opacity: 0.7;
+    stroke: #e53e3e !important;
+  }
+  /* --- END MODIFICATION --- */
+
+
+  g[data-type="stroke-group"] {
+    pointer-events: all;
+    cursor: default;
+  }
+
+  .lasso-path{
+    stroke: var(--accent);
+    stroke-width: 1.5px;
+    stroke-dasharray: 4 2;
+    fill: rgba(43,108,176,0.08);
+    pointer-events: none;
+  }
+
+  .layers{
+    display: none; /* HIDDEN PER REQUEST */
+    width:240px;border-left:1px solid #e6e9ef;background:#fff;padding:12px;box-sizing:border-box;
+    flex-direction:column;gap:8px;
+  }
+  .layers h4{margin:0 0 6px 0;font-size:13px;color:#374151}
+  .layer-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:6px;}
+  .layer-row{display:flex;align-items:center;justify-content:space-between;padding:6px;border-radius:6px;background:#f7f9fc;border:1px solid #eef3fb;font-size:13px;cursor:pointer}
+  .layer-row .meta{display:flex;gap:8px;align-items:center}
+  .layer-row .meta .dot{width:12px;height:12px;border-radius:3px;background:#dbeafe;border:1px solid #b6dbff}
+  .layer-row .actions{display:flex;gap:6px}
+  .small-btn{padding:6px;border-radius:6px;background:#fff;border:1px solid #e6eefb;cursor:pointer;font-size:12px}
+  
+  .layers-footer { display:flex; gap:8px; }
+
+  footer{
+    position: fixed; /* Keep footer outside scaling by fixing it to viewport */
+    bottom: 20px;
+    right: 20px;
+    height: auto;
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    color: #6b7280;
+    font-size: 13px;
+    background: rgba(255, 255, 255, 0.8);
+    border-top: none;
+    border-radius: 6px;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+    pointer-events: auto;
+  }
+  .hint{font-size:13px;color:#6b7280}
+
+  .popup {
+    position:absolute;
+    background: #fff;
+    border: 1px solid #e6e9ef;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    padding: 12px;
+    z-index: 2000;
+    display: none; /* Hidden by default */
+    width: 220px;
+  }
+  .popup h4 { margin: 0 0 12px 0; font-size: 14px; }
+  .popup-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .popup-row:last-child { margin-bottom: 0; }
+  .popup-row label { font-size: 13px; color: #333; }
+  .popup-row input[type="range"] { flex: 1; margin: 0 8px; }
+  .popup-row input[type="color"] { border: none; background: none; padding: 0; height: 24px; width: 24px; }
+  .popup-row span { font-size: 13px; min-width: 24px; text-align: right; }
+  
+  .popup-row-buttons {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .popup-row-buttons .small-btn {
+    flex: 1;
+    font-size: 14px;
+    padding: 6px 8px;
+  }
+  .popup-row-buttons .small-btn#text-bold { font-weight: bold; }
+  .popup-row-buttons .small-btn#text-italic { font-style: italic; }
+  .popup-row-buttons .small-btn#text-underline { text-decoration: underline; }
+  
+  .popup-row-buttons .small-btn.active {
+    background: #e6f1ff;
+    border-color: #b2d6ff;
+    color: var(--accent);
+  }
+
+  /* Extension warning banner */
+  #ext-warning {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 82px;
+    z-index: 1200;
+    background: rgba(255,230,180,0.98);
+    border: 1px solid #ffd58a;
+    color: #4a3a00;
+    padding: 8px 12px;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+  #ext-warning .btn { padding:6px 8px;border-radius:6px;background:#fff;border:1px solid #e6e6e6;cursor:pointer }
+
+</style>
+</head>
+<body>
+  <div class="toolbar" role="toolbar" aria-label="tools">
+    <button class="tool-btn active" data-tool="select" id="tool-select">Select</button>
+    
+    <div class="tool-btn-group" id="draw-tool-group">
+      <button class="tool-btn" data-tool="draw" id="tool-draw">Draw</button>
+      <button class="tool-btn" id="stroke-settings" title="Stroke settings" aria-haspopup="true" aria-expanded="false">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2 4l4 4 4-4z" fill="currentColor" />
+        </svg>
+      </button>
+      
+    </div>
+    
+    <div class="tool-btn-group" id="text-tool-group">
+      <button class="tool-btn" data-tool="text" id="tool-text">Text</button>
+      <button class="tool-btn" id="text-settings" title="Text settings" aria-haspopup="true" aria-expanded="false">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2 4l4 4 4-4z" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+    <button id="undo-btn" class="tool-btn" title="Undo (Ctrl+Z)">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="1.6"
+        stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12l7-7v4h4a7 7 0 0 1 0 14H7"/>
+    </svg>
+  </button>
+
+  <button id="redo-btn" class="tool-btn" title="Redo (Ctrl+Y)">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="1.6"
+        stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12l-7-7v4h-4a7 7 0 0 0 0 14h7"/>
+    </svg>
+  </button>
+
+    
+    <div id="image-transparency" style="display:none;align-items:center;gap:4px;margin:0 8px;">
+      <label style="font-size:13px">Opacity:</label>
+      <input type="range" id="transparency-slider" min="0" max="100" value="100" style="width:100px">
+      <span id="transparency-value" style="font-size:13px;min-width:32px">100%</span>
+    </div>
+    
+    <div id="stroke-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
+      <label style="font-size:13px">Width:</label>
+      <input type="range" id="toolbar-stroke-width" min="1" max="25" step="0.5" value="2" style="width:120px">
+      <span id="toolbar-stroke-value" style="font-size:13px;min-width:36px">2</span>
+      <svg id="stroke-width-preview" width="48" height="24" viewBox="0 0 48 24" style="background:transparent;">
+        <line x1="6" y1="12" x2="42" y2="12" stroke="#111" stroke-linecap="round" stroke-width="2" />
+      </svg>
+      <div id="quick-stroke-colors" style="display:flex;gap:6px;align-items:center;margin-left:6px">
+        <button class="tool-btn" data-color="#2b6cb0" title="Blue" style="width:28px;height:28px;padding:0;border-radius:6px;background:#2b6cb0;border:1px solid rgba(0,0,0,0.08)"></button>
+        <button class="tool-btn" data-color="#e53e3e" title="Red" style="width:28px;height:28px;padding:0;border-radius:6px;background:#e53e3e;border:1px solid rgba(0,0,0,0.08)"></button>
+        <button class="tool-btn" data-color="#111111" title="Black" style="width:28px;height:28px;padding:0;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.06)"></button>
+      </div>
+      <div id="quick-arrow-toggle" style="display:flex; align-items:center; gap: 4px; margin-left: 8px;">
+        <input type="checkbox" id="quick-end-arrow" title="Arrow at end">
+        <label for="quick-end-arrow" style="font-size:13px; cursor:pointer;">End Arrow</label>
+      </div>
+    </div>
+    
+    <div id="text-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
+      <label style="font-size:13px">Opacity:</label>
+      <input type="range" id="toolbar-text-bg-alpha" min="0" max="1" step="0.05" value="0" style="width:120px">
+      <span id="toolbar-text-bg-alpha-value" style="font-size:13px;min-width:36px">0.00</span>
+      <div id="quick-text-styles" style="display:flex;gap:6px;align-items:center;margin-left:8px">
+        <button class="small-btn" id="tb-text-bold" title="Bold" style="width:32px;height:28px;padding:0;border-radius:6px;font-weight:700">B</button>
+        <button class="small-btn" id="tb-text-italic" title="Italic" style="width:32px;height:28px;padding:0;border-radius:6px;font-style:italic">I</button>
+        <button class="small-btn" id="tb-text-underline" title="Underline" style="width:32px;height:28px;padding:0;border-radius:6px">U</button>
+        <button class="small-btn" id="tb-text-crossed" title="Strikethrough" style="width:32px;height:28px;padding:0;border-radius:6px">S</button>
+      </div>
+    </div>
+    
+    <div class="spacer"></div>
+
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button class="tool-btn" id="zoom-reset" title="ReFit">ReFit</button>
+    </div>
+
+    <button class="tool-btn" id="bring-forward" title="Bring to Front">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M3 3h10v10H3z" opacity="0.5"/>
+        <path d="M7 7h10v10H7z"/>
+      </svg>
+      <span>Front</span>
+    </button>
+
+    <button class="tool-btn" id="send-back" title="Send to Back">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M7 7h10v10H7z" opacity="0.5"/>
+        <path d="M3 3h10v10H3z"/>
+      </svg>
+      <span>Back</span>
+    </button>
+
+    <button class="tool-btn" id="delete-item" title="Delete selected">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path d="M6 7h12v13H6zM9 4h6l1 2H8l1-2z" fill="currentColor"/>
+      </svg>
+      <span>Delete</span>
+    </button>
+
+    <button class="tool-btn" id="export-json" title="Export as JSON">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <span>Export</span>
+    </button>
+    <button class="tool-btn" id="import-json" title="Import from JSON">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 12 12 17 17 12"></polyline>
+        <line x1="12" y1="17" x2="12" y2="3"></line>
+      </svg>
+      <span>Import</span>
+    </button>
+
+  </div>
+
+  <div class="app">
+    <div class="board-wrap">
+      <div class="board" id="board" tabindex="0">
+        <div class="board-grid"></div>
+        <svg class="board-strokes" id="strokes-svg"></svg>
+      </div>
+    </div>
+
+    <aside class="layers" id="layers-panel" aria-label="layers">
+      <h4>Layers</h4>
+      <div class="layer-list" id="layer-list"></div>
+      <div class="layers-footer">
+      </div>
+    </aside>
+  </div>
+
+  <footer><div class="hint">MagicBoard - ©2025 FOAcode</div></footer>
+
+  <div id="ext-warning" role="status" aria-live="polite">
+    <div id="ext-warning-msg">A browser extension (e.g. Google Translate) appears active and may change the UI.</div>
+    <button class="btn" id="ext-warning-hide">Hide injected UI</button>
+    <button class="btn" id="ext-warning-close">Dismiss</button>
+  </div>
+
+  <div id="stroke-popup" class="popup">
+    <h4>Stroke Settings</h4>
+    <div class="popup-row">
+      <label for="stroke-color">Color</label>
+      <input type="color" id="stroke-color">
+    </div>
+    <div class="popup-row">
+      <label for="stroke-width">Width</label>
+      <input type="range" id="stroke-width" min="1" max="25" step="0.2">
+      <span id="stroke-width-label">2</span>
+    </div>
+    <div class="popup-row" style="margin-top: 8px;">
+      <label><b>Arrow Options</b></label>
+    </div>
+    <div class="popup-row" style="margin-left: 8px;">
+      <label for="start-arrow" style="font-size: 13px;">Start</label>
+      <input type="checkbox" id="start-arrow">
+    </div>
+    <div class="popup-row" style="margin-left: 8px;">
+      <label for="end-arrow" style="font-size: 13px;">End</label>
+      <input type="checkbox" id="end-arrow">
+    </div>
+    <div class="popup-row">
+      <label for="arrow-size">Arrow Size</label>
+      <input type="range" id="arrow-size" min="4" max="20" step="1" value="5">
+      <span id="arrow-size-label">5</span>
+    </div>
+  </div>
+  
+  <div id="text-popup" class="popup" style="width: 220px;">
+    <h4>Text Style</h4>
+    <div class="popup-row-buttons">
+      <button class="small-btn" id="text-bold" title="Bold (Ctrl+B)">B</button>
+      <button class="small-btn" id="text-italic" title="Italic (Ctrl+I)">I</button>
+      <button class="small-btn" id="text-underline" title="Underline (Ctrl+U)">U</button>
+      <button class="small-btn" id="text-crossed" title="Strikethrough">S</button>
+    </div>
+    <div class="popup-row">
+      <label for="text-color">Color</label>
+      <input type="color" id="text-color">
+    </div>
+    <div class="popup-row">
+      <label for="text-bg-color">BG Color</label>
+      <input type="color" id="text-bg-color">
+    </div>
+    <div class="popup-row">
+      <label for="text-bg-alpha">BG Opacity</label>
+      <input type="range" id="text-bg-alpha" min="0" max="1" step="0.05">
+      <span id="text-bg-alpha-label">0.0</span>
+    </div>
+  </div>
+
+  <script>
+/* Whiteboard v3 */
+
+/* Utilities */
+const el = (q, ctx=document)=>ctx.querySelector(q);
+const id = (prefix='id')=> prefix + '-' + Math.random().toString(36).slice(2,9);
+
+// --- NEW: Color helper functions ---
+function hexToRgb(hex) {
+  let r = 0, g = 0, b = 0;
+  // 3 digits
+  if (hex.length === 4) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else if (hex.length === 7) {
+    r = parseInt(hex[1] + hex[2], 16);
+    g = parseInt(hex[3] + hex[4], 16);
+    b = parseInt(hex[5] + hex[6], 16);
+  }
+  return { r, g, b };
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toLowerCase();
+}
+
+function parseRgba(rgbaString) {
+  if (!rgbaString || rgbaString === 'transparent') {
+    return { r: 255, g: 255, b: 255, a: 0 };
+  }
+  const match = rgbaString.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+  if (match) {
+    return {
+      r: parseInt(match[1]),
+      g: parseInt(match[2]),
+      b: parseInt(match[3]),
+      a: match[4] !== undefined ? parseFloat(match[4]) : 1
+    };
+  }
+  return { r: 0, g: 0, b: 0, a: 1 }; // Default to black if parse fails
+}
+// --- END NEW ---
+
+
+// --- MODIFIED: Unified z-index system ---
+const Z_FLOOR = 1;
+
+let state = {
+  tool: 'select',
+  selectedIds: new Set(),
+  pointer: {x:0,y:0},
+  scale: 1,
+  nextZ: 10,  // Unified z-index for all items
+  stroke: {
+    color: '#111111',
+    width: 2,
+    startArrow: false,
+    endArrow: false,
+    arrowSize: 8
+  },
+  text: {
+    bold: false,
+    italic: false,
+    underline: false,
+    crossed: false,
+    fontSize: 16,
+    color: '#111111',
+    bgColor: '#ffffff',
+    bgAlpha: 0.0
+  }
+};
+
+/* --- State for new features --- */
+let currentStrokeGroup = null; // This is the <g> element
+let currentSvgWrapper = null; // --- NEW: This is the <svg> wrapper ---
+let isLassoing = false;
+let lassoPoints = [];
+let lassoPath = null;
+let straightLineState = null; // For polyline drawing
+
+/* History (undo/redo) */
+const HISTORY_LIMIT = 50;
+let undoStack = [];
+let redoStack = [];
+let isRestoringHistory = false; // Guard to avoid recording history while restoring
+// Slider history guard: record snapshot at slider start and final at end
+let sliderChanging = false;
+let isDeleting = false;
+
+function startSliderHistory(){
+  if(sliderChanging) return;
+  if(isRestoringHistory) return;
+  sliderChanging = true;
+  // push initial snapshot so undo will return to this state
+  const snap = createSnapshot();
+  undoStack.push(snap);
+  if(undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack = [];
+  updateUndoRedoButtons();
+}
+
+function endSliderHistory(){
+  if(!sliderChanging){
+    // if not started via startSliderHistory, just push final state
+    pushHistory();
+    return;
+  }
+  sliderChanging = false;
+  // push the final state
+  const finalSnap = createSnapshot();
+  // avoid pushing duplicate snapshot equal to the last one we just pushed
+  const last = undoStack[undoStack.length-1];
+  try{
+    if(last && JSON.stringify(last) === JSON.stringify(finalSnap)){
+      // no-op, identical
+      updateUndoRedoButtons();
+      return;
+    }
+  }catch(e){}
+  undoStack.push(finalSnap);
+  if(undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack = [];
+  updateUndoRedoButtons();
+}
+
+/* DOM refs */
+const board = el('#board');
+const svg = el('#strokes-svg'); // This is the main SVG for lasso
+const layerList = el('#layer-list');
+const TOOL_BTN = document.querySelectorAll('.tool-btn');
+
+/* Helper: convert client event to board-local coordinates accounting for CSS scale */
+function getBoardPointFromEvent(e){
+  const rect = board.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / state.scale;
+  const y = (e.clientY - rect.top) / state.scale;
+  return { x, y };
+}
+
+function finalizeStrokeGroup() {
+  if (currentStrokeGroup) {
+    if (currentStrokeGroup.children.length === 0) {
+      currentSvgWrapper.remove(); // Remove the whole SVG wrapper
+    } else {
+      makeSvgSelectable(currentStrokeGroup); // Pass the <g> element
+      refreshLayers();
+    }
+    currentStrokeGroup = null;
+    currentSvgWrapper = null;
+  }
+  straightLineState = null;
+}
+
+
+/* ----------------- HISTORY HELPERS (per-stroke undo/redo) ----------------- */
+function createSnapshot() {
+  const items = [];
+
+  // --- Capture images & text
+  board.querySelectorAll('.item').forEach(n => {
+    const obj = {
+      id: n.dataset.id,
+      type: n.dataset.type,
+      left: n.style.left,
+      top: n.style.top,
+      width: n.style.width,
+      height: n.style.height,
+      z: parseInt(n.style.zIndex || 0)
+    };
+
+    if (n.dataset.type === 'image') {
+      const img = n.querySelector('img');
+      obj.src = img?.src || '';
+      obj.opacity = parseFloat(img?.style.opacity || '1');
+    } else if (n.dataset.type === 'text') {
+      const p = n.querySelector('.text-item');
+      obj.text = p?.innerText || '';
+      obj.style = {
+        fontSize: p?.style.fontSize || null,
+        bold: p?.style.fontWeight === 'bold',
+        italic: p?.style.fontStyle === 'italic',
+        underline: p?.style.textDecoration.includes('underline'),
+        color: p?.style.color || null,
+        backgroundColor: p?.style.backgroundColor || null
+      };
+    }
+
+    items.push(obj);
+  });
+
+  // --- Capture strokes (each as individual item)
+  board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
+    const g = svgWrapper.querySelector('g');
+    if (!g) return;
+
+    g.querySelectorAll('.stroke').forEach(p => {
+      const pathId = p.dataset.id;
+      const strokeColor = p.getAttribute('stroke');
+      const hasStartArrow = !!p.getAttribute('marker-start');
+      const hasEndArrow = !!p.getAttribute('marker-end');
+      const arrowSize = parseFloat(p.dataset.arrowSize || state.stroke.arrowSize || 6);
+
+      items.push({
+        id: pathId,
+        type: 'stroke',
+        d: p.getAttribute('d'),
+        stroke: strokeColor,
+        width: parseFloat(p.getAttribute('stroke-width') || 2),
+        z: parseInt(svgWrapper.style.zIndex || 0) || 0,
+        hasStartArrow,
+        hasEndArrow,
+        arrowSize,
+        transform: g.getAttribute('transform') || ''
+      });
+    });
+  });
+
+  // --- Return serializable snapshot
+  return {
+    date: Date.now(),
+    state: {
+      scale: state.scale,
+      nextZ: state.nextZ,
+      stroke: { ...state.stroke },
+      text: { ...state.text }
+    },
+    items
+  };
+}
+
+
+function restoreSnapshot(snapshot) {
+  if (!snapshot) return;
+  isRestoringHistory = true;
+
+  // Clear existing items (but not board background)
+  board.querySelectorAll('.item, .stroke-wrapper').forEach(n => n.remove());
+
+  // --- Restore each item
+  for (const it of snapshot.items || []) {
+    if (it.type === 'image') {
+      const item = createImageItem(it.src || '', parseFloat(it.left) || 80, parseFloat(it.top) || 80, parseFloat(it.width) || 240, {
+        id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true, opacity: it.opacity ?? 1
+      });
+      item.style.zIndex = it.z || 0;
+    }
+
+    else if (it.type === 'text') {
+      const item = createTextItem(it.text || '', parseFloat(it.left) || 80, parseFloat(it.top) || 80, {
+        id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
+      });
+      item.style.zIndex = it.z || 0;
+
+      const p = item.querySelector('.text-item');
+      if (p && it.style) {
+        p.style.fontSize = it.style.fontSize || '';
+        p.style.color = it.style.color || '';
+        p.style.backgroundColor = it.style.backgroundColor || '';
+        p.style.fontWeight = it.style.bold ? 'bold' : 'normal';
+        p.style.fontStyle = it.style.italic ? 'italic' : 'normal';
+        p.style.textDecoration = it.style.underline ? 'underline' : 'none';
+      }
+    }
+
+    else if (it.type === 'stroke') {
+      // Create stroke wrapper and group
+      const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svgWrapper.classList.add('stroke-wrapper');
+      svgWrapper.dataset.type = 'stroke-wrapper';
+      svgWrapper.dataset.id = it.id;
+      svgWrapper.style.zIndex = it.z || 0;
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      if (it.transform) g.setAttribute('transform', it.transform);
+      svgWrapper.appendChild(g);
+
+      // --- Rebuild arrow markers with exact previous geometry
+      let markerStart = '', markerEnd = '';
+      if (it.hasStartArrow || it.hasEndArrow) {
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        const mid = `arrow-${it.id}`;
+        const arrowSize = parseFloat(it.arrowSize) || 6;
+
+        marker.id = mid;
+        marker.setAttribute('markerWidth', arrowSize);
+        marker.setAttribute('markerHeight', arrowSize);
+        marker.setAttribute('refX', arrowSize);
+        marker.setAttribute('refY', arrowSize / 2);
+        marker.setAttribute('markerUnits', 'strokeWidth');
+        marker.setAttribute('orient', 'auto');
+        marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
+
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
+        poly.setAttribute('fill', it.stroke || '#000');
+
+        marker.appendChild(poly);
+        defs.appendChild(marker);
+        g.appendChild(defs);
+
+        if (it.hasStartArrow) markerStart = `url(#${mid})`;
+        if (it.hasEndArrow) markerEnd = `url(#${mid})`;
+      }
+
+      // --- Build stroke path
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.classList.add('stroke');
+      path.dataset.id = it.id;
+      path.setAttribute('d', it.d || '');
+      path.setAttribute('stroke', it.stroke || '#000');
+      path.setAttribute('stroke-width', it.width || 2);
+      path.dataset.arrowSize = it.arrowSize || 6;
+      if (markerStart) path.setAttribute('marker-start', markerStart);
+      if (markerEnd) path.setAttribute('marker-end', markerEnd);
+
+      g.appendChild(path);
+      board.appendChild(svgWrapper);
+
+      makePathSelectable(path);
+      makeSvgSelectable(g);
+    }
+  }
+
+  applyScale();
+  refreshLayers();
+  isRestoringHistory = false;
+}
+
+
+function updateUndoRedoButtons(){
+  const undoBtn = el('#undo-btn'); const redoBtn = el('#redo-btn');
+  if(undoBtn) undoBtn.disabled = undoStack.length <= 1; // <-- MODIFIED
+  if(redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+
+function pushHistory(){
+  if(isRestoringHistory) return;
+  const snap = createSnapshot();
+  
+  const last = undoStack[undoStack.length - 1];
+  try {
+    // --- MODIFICATION: Compare snapshots *without* the 'date' property ---
+    if (last) {
+      // Create copies for comparison, setting 'date' to null
+      const lastForCompare = { ...last, date: null };
+      const snapForCompare = { ...snap, date: null };
+      
+      // If the snapshots are identical (ignoring the date), don't push.
+      if (JSON.stringify(lastForCompare) === JSON.stringify(snapForCompare)) {
+        updateUndoRedoButtons();
+        return;
+      }
+    }
+    // --- END MODIFICATION ---
+  } catch(e) {
+    // if stringify fails, proceed as normal
+  }
+  
+  undoStack.push(snap);
+  if(undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  // any new action clears redo
+  redoStack = [];
+  updateUndoRedoButtons();
+}
+
+function undo(){
+  if(undoStack.length <= 1) return;
+  
+  const currentState = undoStack.pop(); // Pop the state we are leaving
+  redoStack.push(currentState); // Push it to the redo stack
+  
+  // Peek at the new "top" state to restore it
+  const stateToRestore = undoStack[undoStack.length - 1]; 
+  
+  restoreSnapshot(stateToRestore);
+  
+  // FIX: Clear selection after restoring the state
+  clearSelection(); 
+
+  updateUndoRedoButtons();
+}
+
+function redo(){
+  if(redoStack.length === 0) return;
+
+  const stateToRestore = redoStack.pop(); // Pop the state we want to restore
+  undoStack.push(stateToRestore); // Push it back onto the undo stack
+  
+  restoreSnapshot(stateToRestore);
+
+  // FIX: Clear selection after restoring the state
+  clearSelection();
+
+  updateUndoRedoButtons();
+}
+
+/* ---------------------------------------------------- */
+
+
+function setTool(t){
+  if (state.tool === 'draw' && t !== 'draw') {
+    finalizeStrokeGroup();
+  }
+  
+  // Check if any images are selected before changing tool
+  const hasSelectedImages = Array.from(state.selectedIds).some(id => {
+    const node = findNodeById(id);
+    return node && node.dataset.type === 'image';
+  });
+  
+  state.tool = t;
+  
+  TOOL_BTN.forEach(b => {
+    if (!b.closest('.tool-btn-group')) {
+      b.classList.toggle('active', b.dataset.tool === t);
+    }
+  });
+
+  const drawGroup = el('#draw-tool-group');
+  if (t === 'draw' || t === 'stroke-settings') {
+    drawGroup.classList.add('active');
+  } else {
+    drawGroup.classList.remove('active');
+  }
+  
+  const textGroup = el('#text-tool-group');
+  if (t === 'text' || t === 'text-settings') {
+    textGroup.classList.add('active');
+  } else {
+    textGroup.classList.remove('active');
+  }
+  
+  if (t === 'select') {
+    svg.style.pointerEvents = 'auto'; // SVG is needed for lasso
+  } else {
+    svg.style.pointerEvents = 'auto'; // Also needed for drawing
+  }
+  
+  if(t === 'draw') board.style.cursor = 'crosshair';
+  else if(t === 'text') board.style.cursor = 'text';
+  else board.style.cursor = 'default';
+  
+  // Keep transparency slider visible if images are selected
+  const transparencyDiv = el('#image-transparency');
+  if (hasSelectedImages) {
+    transparencyDiv.style.display = 'flex';
+  }
+  // Show/hide stroke toolbar when draw tool is active
+  const toolbarStroke = el('#stroke-toolbar');
+  if (toolbarStroke) {
+    toolbarStroke.style.display = (t === 'draw') ? 'flex' : 'none';
+    // when showing, ensure UI matches state
+    if (t === 'draw') setTimeout(()=>{ try{ updateToolbarStrokeUI(); }catch(e){} }, 0);
+  }
+  // Show/hide text toolbar when text tool is active
+  const toolbarText = el('#text-toolbar');
+  if (toolbarText) {
+    toolbarText.style.display = (t === 'text') ? 'flex' : 'none';
+    if (t === 'text') setTimeout(()=>{ try{ updateToolbarTextUI(); }catch(e){} }, 0);
+  }
+}
+
+/* Element creation */
+// --- MODIFIED: Added options parameter for import ---
+function createImageItem(src, x=80, y=80, w=240, options = {}){
+  finalizeStrokeGroup();
+  const wrapper = document.createElement('div');
+  const uid = options.id || id('img'); // MODIFIED: Allow passing ID
+  wrapper.className = 'item';
+  wrapper.dataset.id = uid;
+  wrapper.dataset.type = 'image';
+  wrapper.style.left = x + 'px'; wrapper.style.top = y + 'px';
+  wrapper.style.zIndex = state.nextZ++; // --- MODIFIED: Use unified Z ---
+  const img = document.createElement('img');
+  img.src = src;
+  if (options.opacity !== undefined) {
+    img.style.opacity = options.opacity;
+  }
+  img.onload = ()=> {
+    // Allow initial width to be the requested width (w) even if it's larger than the image's natural size
+    if (!wrapper.style.width) wrapper.style.width = (w ? w : (img.naturalWidth || 240)) + 'px';
+    if (!options.skipRefresh) refreshLayers();
+    // Update pixelation indicator depending on whether the displayed size exceeds natural size
+    try{ updateImagePixelation(wrapper); }catch(err){}
+  };
+  wrapper.appendChild(img);
+  attachItemBehaviors(wrapper);
+  board.appendChild(wrapper);
+  if (!options.skipRefresh) refreshLayers();
+  if (!options.skipSelect) selectItem(uid);
+  // Toggle pixelation based on size vs natural resolution
+  try{ updateImagePixelation(wrapper); }catch(e){}
+  if (!options.skipHistory) pushHistory();
+  return wrapper;
+}
+
+// If an image is displayed larger than its intrinsic width, apply pixelated rendering
+function updateImagePixelation(wrapper){
+  if(!wrapper) return;
+  const img = wrapper.querySelector && wrapper.querySelector('img');
+  if(!img) return;
+  const natural = img.naturalWidth || 0;
+  // try to read the intended unscaled width from style, otherwise derive from bounding rect
+  let intended = parseFloat(wrapper.style.width);
+  if(!intended || isNaN(intended)){
+    intended = (wrapper.getBoundingClientRect().width || 0) / (state.scale || 1);
+  }
+  if(natural > 0 && intended > natural){
+    img.classList.add('pixelated');
+  } else {
+    img.classList.remove('pixelated');
+  }
+}
+
+// --- MODIFIED: Added options parameter for import ---
+function createTextItem(text='', x=100, y=100, options = {}){
+  finalizeStrokeGroup();
+  const wrapper = document.createElement('div');
+  const uid = options.id || id('txt'); // MODIFIED: Allow passing ID
+  wrapper.className = 'item';
+  wrapper.dataset.id = uid;
+  wrapper.dataset.type = 'text';
+  wrapper.style.left = x + 'px'; wrapper.style.top = y + 'px';
+  wrapper.style.zIndex = state.nextZ++; // --- MODIFIED: Use unified Z ---
+  wrapper.style.minWidth = '80px';
+  wrapper.style.minHeight = '28px';
+  const p = document.createElement('div');
+  p.className = 'text-item';
+  p.contentEditable = 'true';
+  p.innerText = text || 'Type...';
+  p.spellcheck = false;
+  
+  p.style.fontWeight = state.text.bold ? 'bold' : 'normal';
+  p.style.fontStyle = state.text.italic ? 'italic' : 'normal';
+  const td = [];
+  if(state.text.underline) td.push('underline');
+  if(state.text.crossed) td.push('line-through');
+  p.style.textDecoration = td.length ? td.join(' ') : 'none';
+  p.style.fontSize = (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize || '16px');
+  p.style.color = state.text.color;
+  const rgb = hexToRgb(state.text.bgColor);
+  p.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
+  
+  wrapper.appendChild(p);
+  
+  p.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); p.blur(); }
+  });
+  
+  p.addEventListener('focus', ()=>{
+    if(p.innerText === 'Type...'){ p.innerText = ''; }
+  });
+  p.addEventListener('blur', () => {
+    if (isDeleting) return; // <-- UPDATED: Guard against blur-on-delete
+    if (p.innerText.trim() === '') p.innerText = 'Type...';
+    pushHistory(); // capture text edit in history
+  });
+
+  
+  attachItemBehaviors(wrapper);
+  board.appendChild(wrapper);
+  if (!options.skipRefresh) refreshLayers();
+  if (!options.skipSelect) selectItem(uid);
+  
+  // --- MODIFIED: Skip focus during import ---
+  if (!options.skipFocus) {
+    p.focus();
+    document.execCommand('selectAll', false, null);
+    document.getSelection().collapseToEnd();
+  }
+  // --- END MODIFICATION ---
+  // if (!options.skipHistory) pushHistory(); // <-- UPDATED: This line is intentionally removed/commented
+  return wrapper;
+}
+
+/* SVG Stroke creation */
+// --- MODIFIED: Creates a new SVG wrapper for each stroke group ---
+function startStroke(x, y) {
+  const uid = id('stroke-group');
+  currentSvgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  currentSvgWrapper.classList.add('stroke-wrapper');
+  currentSvgWrapper.style.zIndex = state.nextZ++;
+  currentSvgWrapper.dataset.id = uid;
+  currentSvgWrapper.dataset.type = 'stroke-group';
+  board.appendChild(currentSvgWrapper);
+
+  currentStrokeGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+  currentStrokeGroup.dataset.id = uid;
+  currentStrokeGroup.dataset.type = 'stroke-group-g';
+  currentSvgWrapper.appendChild(currentStrokeGroup);
+
+  clearSelection();
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.classList.add('stroke');
+  path.dataset.type = 'stroke';
+  path.dataset.id = id('stroke');
+  path.points = [{x, y}];
+  path.setAttribute('d', `M ${x} ${y}`);
+  path.setAttribute('stroke', state.stroke.color);
+  path.setAttribute('stroke-width', state.stroke.width);
+
+  // Create arrow markers directly inside the same group
+  if (state.stroke.startArrow || state.stroke.endArrow) {
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const markerId = `arrow-${uid}`;
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', markerId);
+    marker.setAttribute('markerWidth', state.stroke.arrowSize);
+    marker.setAttribute('markerHeight', state.stroke.arrowSize);
+    marker.setAttribute('refX', state.stroke.arrowSize / 2);
+    marker.setAttribute('refY', state.stroke.arrowSize / 2);
+    marker.setAttribute('orient', 'auto');
+    const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    polygon.setAttribute('points', `0,0 ${state.stroke.arrowSize},${state.stroke.arrowSize / 2} 0,${state.stroke.arrowSize}`);
+    polygon.setAttribute('fill', state.stroke.color);
+    marker.appendChild(polygon);
+    defs.appendChild(marker);
+    currentStrokeGroup.appendChild(defs);
+
+    if (state.stroke.startArrow) path.setAttribute('marker-start', `url(#${markerId})`);
+    if (state.stroke.endArrow) path.setAttribute('marker-end', `url(#${markerId})`);
+  }
+
+  currentStrokeGroup.appendChild(path);
+  makePathSelectable(path);
+  return path;
+}
+
+/* Smoothing helpers -------------------------------------------------- */
+// Convert Catmull-Rom to Bezier path string. t is tension (commonly 1)
+function catmullRom2bezier(crp, t) {
+  t = t === undefined ? 1 : t;
+  let d = `M ${crp[0].x} ${crp[0].y}`;
+  for (let i = 0; i < crp.length - 1; i++) {
+    const p0 = i ? crp[i - 1] : crp[i];
+    const p1 = crp[i];
+    const p2 = crp[i + 1];
+    const p3 = (i !== crp.length - 2) ? crp[i + 2] : p2;
+
+    const bp1x = p1.x + (p2.x - p0.x) / 6 * t;
+    const bp1y = p1.y + (p2.y - p0.y) / 6 * t;
+    const bp2x = p2.x - (p3.x - p1.x) / 6 * t;
+    const bp2y = p2.y - (p3.y - p1.y) / 6 * t;
+
+    d += ` C ${bp1x} ${bp1y}, ${bp2x} ${bp2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
+function getSmoothPath(points){
+  if(!points || points.length === 0) return '';
+  if(points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if(points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  // Use Catmull-Rom to cubic Bezier conversion for smooth curves
+  try{
+    return catmullRom2bezier(points, 1);
+  }catch(err){
+    // Fallback to simple polyline if anything goes wrong
+    return 'M ' + points.map((p,i)=> (i===0?`${p.x} ${p.y}`:`L ${p.x} ${p.y}`)).join(' ');
+  }
+}
+
+// Add a new point to a path with a tiny pre-filter to reduce jitter
+function addPointToPath(path, x, y){
+  if(!path) return;
+  const pts = path.points || [];
+  // Small distance threshold to avoid extremely close points
+  const last = pts[pts.length-1];
+  if(last){
+    const dx = x - last.x; const dy = y - last.y;
+    const distSq = dx*dx + dy*dy;
+    if(distSq < 0.25) return; // ignore noise within 0.5px
+  }
+
+  // Moving-average prefilter: if we have at least 2 points, average them to smooth tiny zig-zags
+  if(pts.length >= 2){
+    const pprev = pts[pts.length-2];
+    const prev = pts[pts.length-1];
+    const avgX = (pprev.x + prev.x + x)/3;
+    const avgY = (pprev.y + prev.y + y)/3;
+    pts.push({x: avgX, y: avgY});
+  } else {
+    pts.push({x, y});
+  }
+
+  // Keep a bounded number of points to avoid huge arrays for long strokes
+  if(pts.length > 2000) pts.splice(0, pts.length - 2000);
+
+  path.points = pts;
+  const d = getSmoothPath(pts);
+  path.setAttribute('d', d);
+  // If this path has an associated invisible hit-path, keep it in sync so pointer area follows the stroke
+  try {
+    if (path._hitPath) {
+      path._hitPath.setAttribute('d', d);
+      // also update hit width in case stroke-width changed dynamically
+  const visibleWidth = parseFloat(path.getAttribute('stroke-width') || '2');
+  const hitMargin = 20;
+  path._hitPath.setAttribute('stroke-width', Math.max(visibleWidth + hitMargin, 8));
+    }
+  } catch (err) { /* ignore if DOM changed */ }
+}
+
+// Snap a point (mx,my) relative to anchor (sx,sy) to the nearest angle step (degrees)
+function snapToAngle(sx, sy, mx, my, stepDeg = 15) {
+  const dx = mx - sx;
+  const dy = my - sy;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return { x: mx, y: my };
+  let ang = Math.atan2(dy, dx); // radians
+  const angDeg = ang * 180 / Math.PI;
+  const snappedDeg = Math.round(angDeg / stepDeg) * stepDeg;
+  const snappedRad = snappedDeg * Math.PI / 180;
+  return { x: sx + Math.cos(snappedRad) * len, y: sy + Math.sin(snappedRad) * len };
+}
+
+
+/* Selection management */
+function selectItem(idToSelect, addToSelection = false){
+  if (!addToSelection) {
+    clearSelection();
+  }
+  if(!idToSelect) return;
+  state.selectedIds.add(idToSelect);
+  const node = findNodeById(idToSelect);
+  if(!node) {
+    state.selectedIds.delete(idToSelect);
+    return;
+  }
+  node.classList.add('selected');
+
+  // Show/hide transparency slider when an image is selected
+  const transparencyDiv = el('#image-transparency');
+  const transparencySlider = el('#transparency-slider');
+  if (node.dataset.type === 'image' && !addToSelection) {
+    transparencyDiv.style.display = 'flex';
+    // Get current opacity or default to 100
+    const img = node.querySelector('img');
+    const opacity = img ? parseFloat(img.style.opacity || '1') * 100 : 100;
+    transparencySlider.value = opacity;
+    el('#transparency-value').textContent = Math.round(opacity) + '%';
+  } else if (!addToSelection || !Array.from(state.selectedIds).some(id => {
+    const n = findNodeById(id);
+    return n && n.dataset.type === 'image';
+  })) {
+    transparencyDiv.style.display = 'none';
+  }
+  // --- MODIFIED: Handle handle creation only for HTML items ---
+  if(node.dataset.type === 'image' || node.dataset.type === 'text'){
+    if(!node.querySelector('.handle')){
+      const h = document.createElement('div'); h.className='handle'; node.appendChild(h);
+      h.addEventListener('pointerdown', startResizePointer);
+    }
+  }
+  
+  if (!addToSelection && node.dataset.type === 'text') {
+    const textDiv = node.querySelector('.text-item');
+    const styles = window.getComputedStyle(textDiv);
+    
+    state.text.bold = styles.fontWeight === 'bold' || parseInt(styles.fontWeight) >= 700;
+    state.text.italic = styles.fontStyle === 'italic';
+    state.text.underline = styles.textDecoration.includes('underline');
+    state.text.crossed = styles.textDecoration.includes('line-through');
+    state.text.fontSize = parseFloat(styles.fontSize) || state.text.fontSize;
+    
+    const colorRgb = parseRgba(styles.color);
+    state.text.color = rgbToHex(colorRgb.r, colorRgb.g, colorRgb.b);
+    
+    const bgRgb = parseRgba(styles.backgroundColor);
+    state.text.bgColor = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
+    state.text.bgAlpha = bgRgb.a;
+
+    updateTextPopupUI();
+  }
+    try{ updateToolbarTextUI(); }catch(e){}
+
+  // Show/hide text toolbar based on selection (show if any selected item is text)
+  const textToolbar = el('#text-toolbar');
+  if (textToolbar) {
+    const anyTextSelected = Array.from(state.selectedIds).some(id => { const n = findNodeById(id); return n && n.dataset.type === 'text'; });
+    textToolbar.style.display = anyTextSelected ? 'flex' : 'none';
+    if (anyTextSelected) updateToolbarTextUI();
+  }
+  
+  refreshLayers();
+}
+
+function clearSelection(){
+  // --- MODIFIED: Selects .item, .stroke-wrapper and individual .stroke ---
+  board.querySelectorAll('.item.selected, .stroke-wrapper.selected, .stroke.selected').forEach(n=>n.classList.remove('selected'));
+  state.selectedIds.clear();
+  // Hide transparency slider when no images are selected
+  el('#image-transparency').style.display = 'none';
+  // Hide text toolbar when no text is selected
+  const textToolbar = el('#text-toolbar'); if(textToolbar) textToolbar.style.display = 'none';
+}
+
+// Parse a transform string to extract the first translate(tx,ty) if present.
+function parseTransform(transformStr){
+  const res = { tx: 0, ty: 0, rest: (transformStr||'').trim() };
+  if (!transformStr) return res;
+  // Match translate(x,y) where separator may be comma or whitespace
+  const m = transformStr.match(/translate\(\s*(-?\d+\.?\d*)(?:[,\s]+)(-?\d+\.?\d*)\s*\)/i);
+  if (m) {
+    res.tx = parseFloat(m[1]) || 0;
+    res.ty = parseFloat(m[2]) || 0;
+    // remove only the first translate occurrence
+    res.rest = transformStr.replace(m[0], '').trim();
+  }
+  return res;
+}
+
+function findNodeById(idstr){
+  // Prefer stroke-wrapper (SVG wrapper) when present so selection and z-order operate on the wrapper
+  // Fall back to any element with the data-id
+  const wrapper = board.querySelector(`.stroke-wrapper[data-id="${idstr}"]`);
+  if (wrapper) return wrapper;
+  const n = board.querySelector(`[data-id="${idstr}"]`);
+  return n;
+}
+
+// --- MODIFIED: Attaches listener to <g> element, selects wrapper ---
+function makeSvgSelectable(gElement){
+  gElement.addEventListener('pointerdown', (ev)=>{
+    // If the user is drawing, don't let clicks on existing stroke groups select them.
+    if (state.tool === 'draw') {
+      // Prevent selection and allow the board-level draw handler to handle the event
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
+    ev.stopPropagation();
+    
+    finalizeStrokeGroup();
+    
+    const svgWrapper = gElement.closest('.stroke-wrapper');
+    const elId = svgWrapper.dataset.id;
+
+    const addToSelection = ev.shiftKey;
+    const isAlreadySelected = state.selectedIds.has(elId);
+
+    if (isAlreadySelected && addToSelection) {
+      state.selectedIds.delete(elId);
+      svgWrapper.classList.remove('selected');
+      refreshLayers();
+      return;
+    }
+
+    if (!isAlreadySelected) {
+      selectItem(elId, addToSelection);
+    }
+
+    if (state.tool === 'select') {
+      startDragSvg(gElement, ev); // Pass the <g> element to drag
+    }
+  });
+  // Also make individual stroke <path> elements selectable within this group
+  gElement.querySelectorAll('.stroke').forEach(p => makePathSelectable(p));
+}
+
+function makePathSelectable(path){
+  if (!path) return;
+  // Create an invisible wider 'hit' path behind the real stroke so thin strokes are easier to grab.
+  // This hit path will be updated alongside the visible path's 'd'.
+  const svgParent = path.ownerSVGElement || svg;
+  let hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  hit.classList.add('stroke-hit');
+  hit.dataset.type = 'stroke-hit';
+  // Compute a comfortable hit width (visible width + margin)
+  const visibleWidth = parseFloat(path.getAttribute('stroke-width') || '2');
+  const hitMargin = 20; // pixels extra tolerance
+  hit.setAttribute('stroke-width', Math.max(visibleWidth + hitMargin, 8));
+  hit.setAttribute('d', path.getAttribute('d') || '');
+  // Insert hit path before the visible path so it does not occlude markers
+  path.parentNode.insertBefore(hit, path);
+  // Reference on the visible path so we can update it when drawing
+  path._hitPath = hit;
+
+  const onHitPointerDown = (ev) => {
+    if (state.tool === 'draw') { ev.preventDefault(); ev.stopPropagation(); return; }
+    // If the parent stroke-wrapper is already selected, prefer to drag the wrapper
+    const wrapper = path.closest('.stroke-wrapper');
+    if (wrapper && state.selectedIds.has(wrapper.dataset.id)) {
+      ev.stopPropagation();
+      if (state.tool === 'select') {
+        const g = wrapper.querySelector('g');
+        if (g) startDragSvg(g, ev);
+      }
+      return;
+    }
+    ev.stopPropagation();
+    const addToSelection = ev.shiftKey;
+    const pid = path.dataset.id;
+    const isAlready = state.selectedIds.has(pid);
+    if (isAlready && addToSelection) {
+      state.selectedIds.delete(pid);
+      path.classList.remove('selected');
+      refreshLayers();
+      return;
+    }
+    if (!isAlready) {
+      if (!addToSelection) clearSelection();
+      state.selectedIds.add(pid);
+      path.classList.add('selected');
+      refreshLayers();
+    }
+
+    if (state.tool === 'select') {
+      // Start drag using the underlying path element so individual strokes move separately
+      startDragSvg(path, ev);
+    }
+  };
+
+  // Wire pointer events to the hit path
+  hit.addEventListener('pointerdown', onHitPointerDown);
+  // Also accept direct hits on the visible path (for completeness)
+  path.addEventListener('pointerdown', onHitPointerDown);
+}
+
+
+/* Dragging items */
+let dragState = null;
+
+function startDragHtml(node, e){
+  if(state.tool !== 'select') return;
+  if (!state.selectedIds.has(node.dataset.id)) return;
+  e.preventDefault();
+  const pt = getBoardPointFromEvent(e);
+  const startX = pt.x;
+  const startY = pt.y;
+  dragState = { type: 'html', startX, startY, items: [] };
+  state.selectedIds.forEach(id => {
+    const n = findNodeById(id);
+    if (!n) return;
+    // --- MODIFIED: Check for stroke-group (SVG wrapper) ---
+    if (n.dataset.type === 'stroke-group') {
+      const g = n.querySelector('g'); // Find the <g> inside
+      const orig = g.getAttribute('transform') || '';
+      const parsed = parseTransform(orig);
+      dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+    } else if (n.dataset.type === 'stroke') {
+      // individual path selected
+      const orig = n.getAttribute('transform') || '';
+      const parsed = parseTransform(orig);
+      dragState.items.push({ node: n, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+    } else {
+      dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+    }
+  });
+  board.setPointerCapture(e.pointerId);
+}
+
+// --- MODIFIED: element is the <g> element ---
+function startDragSvg(element, e){
+  e.preventDefault();
+  const pt = getBoardPointFromEvent(e);
+  dragState = { type: 'svg', startX: pt.x, startY: pt.y, items: [] };
+  state.selectedIds.forEach(id => {
+    const n = findNodeById(id);
+    if (!n) return;
+    if (n.dataset.type === 'stroke-group') {
+      const g = n.querySelector('g');
+      const orig = g.getAttribute('transform') || '';
+      const parsed = parseTransform(orig);
+      dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+    } else if (n.dataset.type === 'stroke') {
+      // dragging an individual stroke path
+      const orig = n.getAttribute('transform') || '';
+      const parsed = parseTransform(orig);
+      dragState.items.push({ node: n, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+    } else {
+      dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+    }
+  });
+  board.setPointerCapture(e.pointerId);
+}
+
+
+function onPointerMove(e){
+  if(!dragState) return;
+  const pt = getBoardPointFromEvent(e);
+  const x = pt.x;
+  const y = pt.y;
+  const dx = x - dragState.startX;
+  const dy = y - dragState.startY;
+  dragState.items.forEach(item => {
+    if (item.type === 'html') {
+      item.node.style.left = (item.origLeft + dx) + 'px';
+      item.node.style.top  = (item.origTop + dy) + 'px';
+    } else if (item.type === 'svg') {
+      // Apply additive translation on the SVG element while preserving existing transforms.
+      const baseTx = parseFloat(item.baseTx) || 0;
+      const baseTy = parseFloat(item.baseTy) || 0;
+      const newTx = baseTx + dx;
+      const newTy = baseTy + dy;
+      const rest = (item.transformRest || '').trim();
+      const t = rest ? `${rest} translate(${newTx},${newTy})` : `translate(${newTx},${newTy})`;
+      item.node.setAttribute('transform', t);
+    }
+  });
+  if (dragState.type === 'html') {
+    refreshLayers();
+  }
+}
+
+function onPointerUp(e) {
+  if (!dragState) return;
+
+  const pt = getBoardPointFromEvent(e);
+  const dx = pt.x - dragState.startX;
+  const dy = pt.y - dragState.startY;
+
+  // --- NEW: Check if a meaningful drag occurred ---
+  // A tiny threshold (e.g., 1px) prevents saving history 
+  // for accidental micro-drags or simple clicks.
+  const hasMoved = Math.abs(dx) > 1 || Math.abs(dy) > 1;
+
+  dragState.items.forEach(item => {
+    if (item.type === 'svg') {
+      const element = item.node;
+      const baseTx = parseFloat(item.baseTx) || 0;
+      const baseTy = parseFloat(item.baseTy) || 0;
+      const finalTx = baseTx + dx;
+      const finalTy = baseTy + dy;
+      const rest = (item.transformRest || '').trim();
+      const newTransform = rest ? `${rest} translate(${finalTx},${finalTy})` : `translate(${finalTx},${finalTy})`;
+      element.setAttribute('transform', newTransform);
+
+      // ✅ Ensure arrow markers (if present) stay with the stroke
+      const wrapper = element.closest('.stroke-wrapper');
+      if (wrapper) {
+        const defs = wrapper.querySelector('defs');
+        if (defs) wrapper.appendChild(defs.cloneNode(true)); // keep defs with stroke group
+      }
+    } 
+    else if (item.type === 'html') {
+      // ✅ HTML items (like text boxes)
+      item.node.style.left = (item.origLeft + dx) + 'px';
+      item.node.style.top = (item.origTop + dy) + 'px';
+    }
+  });
+
+  try { board.releasePointerCapture?.(e.pointerId); } catch(e) {}
+  dragState = null;
+
+  refreshLayers();
+
+  // ✅ MODIFICATION: Only push history if the item was actually moved
+  if (hasMoved) {
+    pushHistory();
+  }
+}
+
+
+/* Resize handling */
+let resizeState = null;
+function startResizePointer(e){
+  e.stopPropagation(); e.preventDefault();
+  const handle = e.target;
+  const node = handle.closest('.item');
+  // Keep client coordinates so we can compute deltas that respect visual scale
+  const startClientX = e.clientX;
+  const startClientY = e.clientY;
+  const origW = node.offsetWidth;
+  const origH = node.offsetHeight;
+  const textDiv = node.querySelector('.text-item');
+  const baseFontSize = textDiv ? parseFloat(window.getComputedStyle(textDiv).fontSize) : null;
+  resizeState = {node, startClientX, startClientY, origW, origH, baseFontSize};
+  window.addEventListener('pointermove', onResizeMove);
+  window.addEventListener('pointerup', onResizeUp);
+}
+
+function onResizeMove(e) {
+  if (!resizeState) return;
+  // Client delta needs to be converted into board-space delta by dividing by scale
+  const dx = (e.clientX - resizeState.startClientX) / state.scale;
+  const dy = (e.clientY - resizeState.startClientY) / state.scale;
+  const node = resizeState.node;
+  if (node.dataset.type === 'image') {
+    const img = node.querySelector('img');
+    if (!img) return;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    let newWidth = Math.max(32, resizeState.origW + dx);
+    let newHeight = newWidth / aspect;
+    node.style.width = newWidth + 'px';
+    node.style.height = newHeight + 'px';
+    // Update pixelation if image is larger than natural resolution
+    try{ updateImagePixelation(node); }catch(err){}
+  } 
+  else if (node.dataset.type === 'text') {
+    const newWidth = Math.max(50, resizeState.origW + dx);
+    const newHeight = Math.max(20, resizeState.origH + dy);
+    node.style.width = newWidth + 'px';
+    node.style.height = newHeight + 'px';
+
+    const textDiv = node.querySelector('.text-item');
+    if (resizeState.baseFontSize) {
+      // Calculate initial scale factors
+      const scaleW = newWidth / resizeState.origW;
+      const scaleH = newHeight / resizeState.origH;
+      
+      // Start with a balanced scale that considers both dimensions
+      let fontSize = resizeState.baseFontSize * Math.max(scaleW, scaleH);
+      
+      // Set word-wrap properties for text flow
+      textDiv.style.wordWrap = 'break-word';
+      textDiv.style.overflowWrap = 'break-word';
+      textDiv.style.whiteSpace = 'pre-wrap';
+      textDiv.style.overflow = 'hidden';
+
+      // Iteratively adjust font size to find optimal fit
+      const maxTries = 20; // Prevent infinite loops
+      let tries = 0;
+      let lastGoodSize = fontSize;
+
+      do {
+        textDiv.style.fontSize = fontSize + 'px';
+        
+        const fitsWidth = textDiv.scrollWidth <= newWidth;
+        const fitsHeight = textDiv.scrollHeight <= newHeight;
+        
+        if (fitsWidth && fitsHeight) {
+          // Text fits, try increasing
+          lastGoodSize = fontSize;
+          fontSize *= 1.1;
+        } else {
+          // Text doesn't fit, scale down
+          fontSize *= 0.9;
+        }
+        
+        tries++;
+      } while (tries < maxTries);
+
+      // Use the last known good size
+      textDiv.style.fontSize = lastGoodSize + 'px';
+
+      // Final validation and adjustment if needed
+      if (textDiv.scrollHeight > newHeight || textDiv.scrollWidth > newWidth) {
+        const heightRatio = newHeight / textDiv.scrollHeight;
+        const widthRatio = newWidth / textDiv.scrollWidth;
+        const finalScale = Math.min(heightRatio, widthRatio);
+        textDiv.style.fontSize = (lastGoodSize * finalScale) + 'px';
+      }
+    }
+  }
+}
+
+function onResizeUp(e) {
+  window.removeEventListener('pointermove', onResizeMove);
+  window.removeEventListener('pointerup', onResizeUp);
+  resizeState = null;
+  refreshLayers();
+  pushHistory(); // <-- MODIFICATION: Record resize in history
+}
+
+
+/* Drawing tool logic */
+let currentPath = null;
+let drawing = false;
+
+function isPointInPolygon(point, polygon) {
+  let isInside = false;
+  const { x, y } = point;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const intersect = ((yi > y) !== (yj > y))
+        && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) isInside = !isInside;
+  }
+  return isInside;
+}
+
+
+function onBoardPointerDown(e) {
+  if (e.button !== 0) return;
+  const pt = getBoardPointFromEvent(e);
+  const x = pt.x, y = pt.y;
+  state.pointer.x = x; state.pointer.y = y;
+
+  // --- DRAW TOOL ---
+  if (state.tool === 'draw') {
+    if (e.target.closest('.item, .stroke-wrapper, .stroke')) e.stopPropagation();
+
+    if (!e.shiftKey) finalizeStrokeGroup();
+
+    if (e.shiftKey) {
+      const isSingleLineMode = e.ctrlKey;
+      if (straightLineState && straightLineState.isInterrupted && !isSingleLineMode)
+        finalizeStrokeGroup();
+
+      if (straightLineState && !isSingleLineMode) {
+        drawing = true;
+        board.setPointerCapture?.(e.pointerId);
+        const anchorX = straightLineState.lastX ?? straightLineState.startX;
+        const anchorY = straightLineState.lastY ?? straightLineState.startY;
+        let finalX = x, finalY = y;
+        if (e.altKey) {
+          const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
+          finalX = snapped.x; finalY = snapped.y;
+        }
+        const clickedPath = straightLineState.basePath + ` L ${finalX} ${finalY}`;
+        currentPath.setAttribute('d', clickedPath);
+      } else {
+        drawing = true;
+        board.setPointerCapture?.(e.pointerId);
+        finalizeStrokeGroup();
+        currentPath = startStroke(x, y);
+        const d = `M ${x} ${y}`;
+        currentPath.setAttribute('d', d);
+        straightLineState = {
+          startX: x,
+          startY: y,
+          lastX: x,
+          lastY: y,
+          basePath: d,
+          isPending: true,
+          isSingle: isSingleLineMode,
+          isInterrupted: false
+        };
+      }
+    } else {
+      if (straightLineState) finalizeStrokeGroup();
+      straightLineState = null;
+      drawing = true;
+      board.setPointerCapture?.(e.pointerId);
+      currentPath = startStroke(x, y);
+    }
+  }
+
+  // --- TEXT TOOL ---
+  else if (state.tool === 'text') {
+    const clickedOnTextItem = e.target.closest('.text-item');
+    const clickedOnHandle = e.target.closest('.handle');
+    const clickedOnOtherItem = e.target.closest('.item, .stroke-wrapper, .stroke, .stroke-hit');
+
+    // ✅ If resizing (handle clicked), allow resizing but skip new text creation
+    if (clickedOnHandle) return;
+
+    // ✅ If clicking on existing text box, just select it
+    if (clickedOnTextItem) {
+      const wrapper = clickedOnTextItem.closest('.item');
+      selectItem(wrapper.dataset.id);
+      return;
+    }
+
+    // Prevent selecting underlying elements
+    if (clickedOnOtherItem) e.stopPropagation();
+
+    // If a text box is currently active and click is outside, blur it
+    const activeText = document.activeElement && document.activeElement.contentEditable === 'true';
+    if (activeText) document.activeElement.blur();
+
+    // Create a new text box at the click position
+    clearSelection();
+    createTextItem('', x, y);
+    return;
+  }
+
+  // --- SELECT TOOL / OTHER TOOLS ---
+  else {
+    if (straightLineState) finalizeStrokeGroup();
+
+    const clickedOnItem = e.target.closest('.item, .stroke-wrapper, .stroke, .stroke-hit');
+
+    if (!clickedOnItem && state.tool === 'select') {
+      isLassoing = true;
+      lassoPoints = [{ x, y }];
+      lassoPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      lassoPath.setAttribute('d', `M ${x} ${y}`);
+      lassoPath.classList.add('lasso-path');
+      svg.appendChild(lassoPath);
+      clearSelection();
+      refreshLayers();
+      board.setPointerCapture?.(e.pointerId);
+    } else if (!clickedOnItem) {
+      clearSelection();
+      refreshLayers();
+    }
+  }
+}
+
+function onBoardPointerMove(e){
+  if (isLassoing) {
+    const pt = getBoardPointFromEvent(e);
+    const x = pt.x, y = pt.y;
+    lassoPoints.push({x, y});
+    lassoPath.setAttribute('d', lassoPath.getAttribute('d') + ` L ${x} ${y}`);
+    return;
+  }
+  if(drawing && currentPath){
+    const pt = getBoardPointFromEvent(e);
+    const x = pt.x, y = pt.y;
+    
+  if (straightLineState) {
+  // Determine anchor for segment snapping: last point for polylines, start for first segment
+  const anchorX = straightLineState.lastX ?? straightLineState.startX;
+  const anchorY = straightLineState.lastY ?? straightLineState.startY;
+
+      if (state.stroke.startArrow || state.stroke.endArrow) {
+        // Create arrow marker definitions if needed
+        const markerId = `arrow-${currentPath.dataset.id}`;
+        const defsId = `defs-${currentPath.dataset.id}`;
+        let defs = svg.querySelector(`#${defsId}`);
+        if (!defs) {
+          defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          defs.id = defsId;
+          svg.insertBefore(defs, svg.firstChild);
+          
+          const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+          marker.id = markerId;
+          marker.setAttribute('viewBox', '0 0 10 10');
+          marker.setAttribute('refX', '9');
+          marker.setAttribute('refY', '5');
+          marker.setAttribute('markerWidth', state.stroke.arrowSize);
+          marker.setAttribute('markerHeight', state.stroke.arrowSize);
+          marker.setAttribute('orient', 'auto-start-reverse');
+          
+          const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+          arrowPath.setAttribute('fill', state.stroke.color);
+          
+          marker.appendChild(arrowPath);
+          defs.appendChild(marker);
+        }
+
+        // Update marker color and size
+        const marker = defs.querySelector(`#${markerId}`);
+        marker.setAttribute('markerWidth', state.stroke.arrowSize);
+        marker.setAttribute('markerHeight', state.stroke.arrowSize);
+        marker.querySelector('path').setAttribute('fill', state.stroke.color);
+        
+        // Apply markers
+        if (state.stroke.startArrow && state.stroke.endArrow) {
+          currentPath.setAttribute('marker-start', `url(#${markerId})`);
+          currentPath.setAttribute('marker-end', `url(#${markerId})`);
+        } else if (state.stroke.startArrow) {
+          currentPath.setAttribute('marker-start', `url(#${markerId})`);
+          currentPath.removeAttribute('marker-end');
+        } else if (state.stroke.endArrow) {
+          currentPath.removeAttribute('marker-start');
+          currentPath.setAttribute('marker-end', `url(#${markerId})`);
+        }
+      } else {
+        currentPath.removeAttribute('marker-start');
+        currentPath.removeAttribute('marker-end');
+      }
+      
+      if (e.altKey) {
+        const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
+        currentPath.setAttribute('d', straightLineState.basePath + ` L ${snapped.x} ${snapped.y}`);
+      } else {
+        currentPath.setAttribute('d', straightLineState.basePath + ` L ${x} ${y}`);
+      }
+    } else {
+      // Regular freehand drawing - no arrows
+      currentPath.removeAttribute('marker-start');
+      currentPath.removeAttribute('marker-end');
+      // Add point to the path and update with a smoothed curve
+      addPointToPath(currentPath, x, y);
+    }
+  }
+  onPointerMove(e);
+}
+
+function onBoardPointerUp(e){
+  const pt = getBoardPointFromEvent(e);
+  const x = pt.x, y = pt.y;
+  let didDrawOrLasso = false; // <-- NEW flag
+
+  if (isLassoing) {
+    isLassoing = false;
+    didDrawOrLasso = true; // Mark that an action occurred
+    lassoPath.remove();
+    lassoPath = null;
+    const boardRect = board.getBoundingClientRect();
+    // --- MODIFIED: Look for .item and .stroke-wrapper ---
+    // Select images and text items by their center point
+    const allItems = board.querySelectorAll('.item');
+    clearSelection();
+    allItems.forEach(node => {
+      const type = node.dataset.type;
+      if (type !== 'image' && type !== 'text') return;
+      const nRect = node.getBoundingClientRect();
+      // Convert element center into board-space coordinates (unscaled)
+      const itemCenterX = ((nRect.left - boardRect.left) + nRect.width / 2) / state.scale;
+      const itemCenterY = ((nRect.top - boardRect.top) + nRect.height / 2) / state.scale;
+      const centerPoint = { x: itemCenterX, y: itemCenterY };
+      if (isPointInPolygon(centerPoint, lassoPoints)) {
+        state.selectedIds.add(node.dataset.id);
+        node.classList.add('selected');
+      }
+    });
+
+    // Select individual stroke <path> elements by their bounding-box center so strokes in a group
+    // can be selected separately instead of selecting the whole wrapper.
+    board.querySelectorAll('path.stroke').forEach(p => {
+      const pRect = p.getBoundingClientRect();
+      const px = ((pRect.left - boardRect.left) + pRect.width / 2) / state.scale;
+      const py = ((pRect.top - boardRect.top) + pRect.height / 2) / state.scale;
+      const ptCenter = { x: px, y: py };
+      if (isPointInPolygon(ptCenter, lassoPoints)) {
+        state.selectedIds.add(p.dataset.id);
+        p.classList.add('selected');
+      }
+    });
+    lassoPoints = [];
+    refreshLayers();
+    try { board.releasePointerCapture?.(e.pointerId); } catch(err) {}
+  }
+  
+  if(drawing && currentPath){
+    drawing = false;
+    didDrawOrLasso = true; // Mark that an action occurred
+    try { board.releasePointerCapture?.(e.pointerId); } catch(err) {}
+    
+    if (straightLineState) {
+      // Snap final endpoint when ALT is held
+      const anchorX = straightLineState.lastX ?? straightLineState.startX;
+      const anchorY = straightLineState.lastY ?? straightLineState.startY;
+      let finalX = x, finalY = y;
+      if (e.altKey) {
+        const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
+        finalX = snapped.x; finalY = snapped.y;
+      }
+      const d = straightLineState.basePath + ` L ${finalX} ${finalY}`;
+      currentPath.setAttribute('d', d);
+
+      if (straightLineState.isSingle) {
+        finalizeStrokeGroup();
+        currentPath = null;
+      } else if (e.shiftKey) {
+        straightLineState.isPending = false;
+        straightLineState.basePath = d;
+        straightLineState.lastX = finalX;
+        straightLineState.lastY = finalY;
+      } else {
+        finalizeStrokeGroup();
+        currentPath = null;
+      }
+    } else {
+      // Ensure final point is added for free-hand stroke
+      if (currentPath) addPointToPath(currentPath, x, y);
+      currentPath = null; // Free-hand stroke is finalized on pointer up
+    }
+  }
+
+  // Record history ONLY for drawing/lassoing actions
+  if (didDrawOrLasso && !isRestoringHistory) {
+    pushHistory();
+  }
+  
+  onPointerUp(e); // This handles drag history
+}
+
+
+/* Drag/drop/paste */
+board.addEventListener('dragover', (e)=>{ e.preventDefault(); board.style.opacity=0.95; });
+board.addEventListener('dragleave', ()=>{ board.style.opacity=1; });
+board.addEventListener('drop', (e)=>{
+  e.preventDefault(); board.style.opacity=1;
+  const items = Array.from(e.dataTransfer.files || []);
+  const pt = getBoardPointFromEvent(e);
+  const x = pt.x;
+  const y = pt.y;
+  items.forEach(file=>{
+    if(file.type.startsWith('image/')){
+      const url = URL.createObjectURL(file);
+      createImageItem(url, x, y, 260);
+    }
+  });
+});
+
+window.addEventListener('paste', (ev)=>{
+  if (document.activeElement && document.activeElement.isContentEditable) return;
+  const items = ev.clipboardData?.items || [];
+  for(const it of items){
+    if(it.type.startsWith('image/')){
+      const file = it.getAsFile();
+      const url = URL.createObjectURL(file);
+      // Place pasted image centered in current board viewport (account for scale)
+      const rect = board.getBoundingClientRect();
+      const centerX = (rect.width / 2) / state.scale;
+      const centerY = (rect.height / 2) / state.scale;
+      createImageItem(url, centerX - 100, centerY - 80, 300);
+      ev.preventDefault();
+      return;
+    }
+    if(it.type === 'text/plain'){
+      it.getAsString(str=>{
+        const rect = board.getBoundingClientRect();
+        const centerX = (rect.width / 2) / state.scale;
+        const centerY = (rect.height / 2) / state.scale;
+        createTextItem(str, centerX - 80, centerY - 20);
+      });
+      ev.preventDefault();
+      return;
+    }
+  }
+});
+
+
+/* Attach item behaviors */
+function attachItemBehaviors(node){
+  node.addEventListener('pointerdown', (e)=>{
+    // If we're in draw mode, don't let item handlers run (prevents selection)
+    if (state.tool === 'draw') {
+      // Let the board handle drawing — but prevent native focus/drag side-effects
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    e.stopPropagation();
+
+    const addToSelection = e.shiftKey;
+    const isAlreadySelected = state.selectedIds.has(node.dataset.id);
+
+    if (isAlreadySelected && addToSelection) {
+      state.selectedIds.delete(node.dataset.id);
+      node.classList.remove('selected');
+      refreshLayers();
+      return;
+    }
+
+    if (!isAlreadySelected) {
+      selectItem(node.dataset.id, addToSelection);
+    }
+    
+    if (state.tool === 'select') {
+      startDragHtml(node, e);
+    }
+  });
+
+  node.addEventListener('dblclick', (e)=>{
+    // don't open text edit when drawing
+    if (state.tool === 'draw') return;
+
+    if(node.dataset.type === 'text' && !e.ctrlKey){
+      const p = node.querySelector('.text-item');
+      p.contentEditable = 'true';
+      p.focus();
+      if (p.innerText !== 'Type...') {
+        document.execCommand('selectAll', false, null);
+      }
+    }
+  });
+}
+
+
+/* Delete selected */
+function deleteSelected() {
+  if (state.selectedIds.size === 0) return;
+  isDeleting = true; // <-- SET FLAG
+  const ids = Array.from(state.selectedIds);
+  ids.forEach(id => {
+    const node = findNodeById(id);
+    if (!node) return;
+    // If it's an individual SVG stroke path, also remove its invisible hit-path if present
+    if (node.dataset.type === 'stroke') {
+      try {
+        if (node._hitPath && node._hitPath.remove) node._hitPath.remove();
+        else {
+          // fallback: remove adjacent .stroke-hit sibling
+          const prev = node.previousSibling;
+          const next = node.nextSibling;
+          if (prev && prev.classList && prev.classList.contains('stroke-hit')) prev.remove();
+          if (next && next.classList && next.classList.contains('stroke-hit')) next.remove();
+        }
+      } catch (err) { /* ignore */ }
+    }
+    node.remove(); // This works for both .item and .stroke-wrapper
+  });
+  clearSelection();
+  refreshLayers();
+  pushHistory();
+  isDeleting = false; // <-- RESET FLAG
+}
+
+
+/* Layers panel */
+function collectAllItems(){
+  const items = [];
+  // --- MODIFIED: Selects all items from board ---
+  board.querySelectorAll('.item, .stroke-wrapper').forEach(n=>{
+    let title = 'Item';
+    if (n.dataset.type === 'image') title = 'Image';
+    else if (n.dataset.type === 'text') title = 'Text';
+    else if (n.dataset.type === 'stroke-group') title = 'Drawing';
+    
+    items.push({ id: n.dataset.id, type: n.dataset.type, z: parseInt(n.style.zIndex||0), title: title });
+  });
+  items.sort((a,b)=> (b.z - a.z) || a.id.localeCompare(b.id));
+  return items;
+}
+
+function refreshLayers(){
+  if (!layerList) return; 
+  const items = collectAllItems();
+  layerList.innerHTML = '';
+  items.forEach(it=>{
+    const row = document.createElement('div'); row.className='layer-row';
+    row.dataset.id = it.id;
+    row.innerHTML = `<div class="meta"><div class="dot"></div><div style="font-size:13px">${it.title}</div></div>
+      <div class="actions"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>`;
+    layerList.appendChild(row);
+    if (state.selectedIds.has(it.id)) {
+      row.style.background = '#e6f1ff'; row.style.borderColor = '#b2d6ff';
+    } else {
+      row.style.background = '#f7f9fc'; row.style.borderColor = '#eef3fb';
+    }
+    row.addEventListener('click', (e)=> { selectItem(it.id, e.shiftKey); });
+    row.querySelector('.up').addEventListener('click', (e)=>{ e.stopPropagation(); changeZ(it.id, +10); });
+    row.querySelector('.down').addEventListener('click', (e)=>{ e.stopPropagation(); changeZ(it.id, -10); });
+  });
+}
+
+function changeZ(idstr, delta){
+  const node = findNodeById(idstr);
+  if(!node) return;
+  const cur = parseInt(node.style.zIndex||0);
+  node.style.zIndex = (cur + delta);
+  // reorderSvg(); // No longer needed
+  refreshLayers();
+}
+
+// function reorderSvg() {} // No longer needed
+
+/* Export/Import .wb (zip) Whiteboard State */
+async function exportWhiteboard(){
+  const items = [];
+  const imageBlobs = [];
+
+  // Collect items (images/text)
+  for (const n of board.querySelectorAll('.item')) {
+    const t = n.dataset.type;
+    const obj = {
+      id: n.dataset.id,
+      type: t,
+      left: n.style.left,
+      top: n.style.top,
+      width: n.style.width,
+      height: n.style.height,
+      z: parseInt(n.style.zIndex||0)
+    };
+
+    if (t === 'image') {
+      const img = n.querySelector('img');
+      if (img) {
+        try {
+          const res = await fetch(img.src);
+          const blob = await res.blob();
+          const idx = imageBlobs.length;
+          imageBlobs.push(blob);
+          obj.imageIndex = idx;
+          obj.originalSrc = img.src;
+          // Save opacity information
+          obj.opacity = parseFloat(img.style.opacity || '1');
+        } catch (err) {
+          console.warn('Could not include image in export:', err);
+        }
+      }
+    }
+
+    if (t === 'text') {
+      const p = n.querySelector('.text-item');
+      obj.text = p?.innerText || '';
+      obj.style = {
+        bold: p.style.fontWeight === 'bold',
+        italic: p.style.fontStyle === 'italic',
+        underline: p.style.textDecoration === 'underline',
+        color: p.style.color,
+        backgroundColor: p.style.backgroundColor,
+        fontSize: p.style.fontSize
+      };
+    }
+
+    items.push(obj);
+  }
+
+  // Collect strokes with markers
+  board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
+    const g = svgWrapper.querySelector('g');
+    if (!g) return;
+    const paths = [];
+    let g_color = '#111', g_width = 2;
+    g.querySelectorAll('.stroke').forEach(p => {
+      paths.push({ d: p.getAttribute('d'), markerStart: p.getAttribute('marker-start'), markerEnd: p.getAttribute('marker-end') });
+      g_color = p.getAttribute('stroke') || g_color;
+      g_width = p.getAttribute('stroke-width') || g_width;
+    });
+
+    // collect marker defs if any
+    const defsId = `defs-${svgWrapper.dataset.id}`;
+    const defs = svg.querySelector(`#${defsId}`);
+    const markers = [];
+    if (defs) {
+      defs.querySelectorAll('marker').forEach(m => {
+        markers.push({ id: m.id, size: m.getAttribute('markerWidth'), color: m.querySelector('path')?.getAttribute('fill') });
+      });
+    }
+
+    items.push({ id: svgWrapper.dataset.id, type: 'stroke-group', z: parseInt(svgWrapper.style.zIndex||0)||0, transform: g.getAttribute('transform')||'', paths, markers, color: g_color, width: g_width });
+  });
+
+  // Prepare a sanitized copy of state for serialization (convert Set to array, keep primitives)
+  const serializableState = Object.assign({}, state);
+  serializableState.selectedIds = Array.from(state.selectedIds instanceof Set ? state.selectedIds : []);
+  serializableState.pointer = state.pointer || {x:0,y:0};
+  const metaBlob = new Blob([JSON.stringify({ version: '1.0', date: new Date().toISOString(), state: serializableState, items, nextZ: state.nextZ }, null, 2)], { type: 'application/json' });
+
+  const zip = new JSZip();
+  zip.file('whiteboard.json', metaBlob);
+  imageBlobs.forEach((b, i) => zip.file(`images/image-${i}`, b));
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  // Format: MBoard_yymmdd_hhmm.wb
+  const now = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  const y = now.getFullYear().toString().slice(-2);
+  const m = pad(now.getMonth() + 1);
+  const d = pad(now.getDate());
+  const hh = pad(now.getHours());
+  const mm = pad(now.getMinutes());
+  const fname = `MBoard_${y}${m}${d}_${hh}${mm}.wb`;
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url);
+}
+
+async function importWhiteboard(file){
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const txt = await zip.file('whiteboard.json').async('text');
+    const data = JSON.parse(txt);
+
+    // Clear existing
+    board.querySelectorAll('.item, .stroke-wrapper').forEach(n=>n.remove());
+    svg.innerHTML = '';
+
+  // Restore state carefully to avoid replacing runtime objects (e.g. selectedIds Set)
+  const savedState = data.state || {};
+  // Primitive fields
+  if (typeof savedState.tool === 'string') state.tool = savedState.tool;
+  if (typeof savedState.scale === 'number') state.scale = savedState.scale;
+  if (typeof savedState.nextZ === 'number') state.nextZ = savedState.nextZ;
+  // Stroke & text settings (merge)
+  state.stroke = Object.assign({}, state.stroke, savedState.stroke || {});
+  state.text = Object.assign({}, state.text, savedState.text || {});
+  // Pointer
+  state.pointer = Object.assign({x:0,y:0}, savedState.pointer || {});
+  // Recreate selectedIds as a Set (saved as array during export)
+  if (Array.isArray(savedState.selectedIds)) state.selectedIds = new Set(savedState.selectedIds);
+  else state.selectedIds = new Set();
+  // Ensure nextZ falls back to top-level nextZ if present
+  state.nextZ = data.nextZ || state.nextZ || Z_FLOOR + 10;
+
+  const importOptions = { skipSelect: true, skipFocus: true, skipRefresh: true, skipHistory: true };
+
+    for (const it of (data.items || [])) {
+      if (it.type === 'image') {
+        const imgBlobFile = zip.file(`images/image-${it.imageIndex}`);
+        let url = it.originalSrc || '';
+        if (imgBlobFile) {
+          const b = await imgBlobFile.async('blob');
+          url = URL.createObjectURL(b);
+        }
+        const item = createImageItem(url, parseFloat(it.left)||80, parseFloat(it.top)||80, parseFloat(it.width)||240, { 
+          ...importOptions, 
+          id: it.id,
+          opacity: it.opacity !== undefined ? it.opacity : 1
+        });
+        item.style.zIndex = it.z;
+      } else if (it.type === 'text') {
+        const item = createTextItem(it.text||'', parseFloat(it.left)||80, parseFloat(it.top)||80, { ...importOptions, id: it.id });
+        item.style.zIndex = it.z;
+        if (it.style) {
+          const p = item.querySelector('.text-item');
+          p.style.fontWeight = it.style.bold ? 'bold' : 'normal';
+          p.style.fontStyle = it.style.italic ? 'italic' : 'normal';
+          p.style.textDecoration = it.style.underline ? 'underline' : 'none';
+          if (it.style.color) p.style.color = it.style.color;
+          if (it.style.backgroundColor) p.style.backgroundColor = it.style.backgroundColor;
+          if (it.style.fontSize) p.style.fontSize = it.style.fontSize;
+        }
+      } else if (it.type === 'stroke-group') {
+        const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svgWrapper.classList.add('stroke-wrapper'); svgWrapper.dataset.id = it.id; svgWrapper.dataset.type = 'stroke-group'; svgWrapper.style.zIndex = it.z; board.appendChild(svgWrapper);
+
+        // recreate marker defs if present
+        if (it.markers && it.markers.length) {
+          const defs = document.createElementNS('http://www.w3.org/2000/svg','defs'); defs.id = `defs-${it.id}`; svg.insertBefore(defs, svg.firstChild);
+          it.markers.forEach(m => {
+            const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+            marker.id = m.id; marker.setAttribute('viewBox','0 0 10 10'); marker.setAttribute('refX','9'); marker.setAttribute('refY','5'); marker.setAttribute('markerWidth',m.size); marker.setAttribute('markerHeight',m.size); marker.setAttribute('orient','auto-start-reverse');
+            const arrowPath = document.createElementNS('http://www.w3.org/2000/svg','path'); arrowPath.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); arrowPath.setAttribute('fill', m.color || '#000'); marker.appendChild(arrowPath); defs.appendChild(marker);
+          });
+        }
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg','g'); g.dataset.id = it.id; g.dataset.type = 'stroke-group-g'; if (it.transform) g.setAttribute('transform', it.transform); svgWrapper.appendChild(g);
+        (it.paths || []).forEach(p => {
+          const path = document.createElementNS('http://www.w3.org/2000/svg','path'); path.classList.add('stroke'); path.dataset.type = 'stroke'; path.dataset.id = id('stroke'); path.setAttribute('d', p.d); path.setAttribute('stroke', it.color); path.setAttribute('stroke-width', it.width); if (p.markerStart) path.setAttribute('marker-start', p.markerStart); if (p.markerEnd) path.setAttribute('marker-end', p.markerEnd); g.appendChild(path); makePathSelectable(path);
+        });
+        makeSvgSelectable(g);
+      }
+    }
+
+    clearSelection(); refreshLayers();
+    // Ensure the app returns to select tool after import
+    setTool('select');
+  // Reset history and capture the imported state as the base snapshot
+  undoStack = []; redoStack = []; pushHistory();
+  } catch (err) {
+    console.error('Import failed:', err);
+    const btn = document.getElementById('import-json');
+    if (btn) { const oldTxt = btn.querySelector('span').innerText; btn.querySelector('span').innerText = 'Failed!'; btn.style.color = 'red'; setTimeout(()=>{ btn.querySelector('span').innerText = oldTxt; btn.style.color = ''; },2000); }
+  }
+}
+
+
+/* Event wiring */
+board.addEventListener('pointerdown', onBoardPointerDown, {capture: true});
+board.addEventListener('pointermove', onBoardPointerMove);
+board.addEventListener('pointerup', onBoardPointerUp);
+
+
+/* Toolbar wiring */
+document.getElementById('tool-select').addEventListener('click', ()=>setTool('select'));
+document.getElementById('tool-draw').addEventListener('click', ()=>setTool('draw'));
+document.getElementById('tool-text').addEventListener('click', ()=>setTool('text'));
+
+// Undo/Redo wiring
+const undoBtnEl = el('#undo-btn'); const redoBtnEl = el('#redo-btn');
+if (undoBtnEl) undoBtnEl.addEventListener('click', ()=> undo());
+if (redoBtnEl) redoBtnEl.addEventListener('click', ()=> redo());
+updateUndoRedoButtons();
+
+/* Zoom controls: apply scale only to the board element (toolbar & footer unaffected) */
+
+function applyScale(){
+  // Use CSS zoom so the board's layout/scroll extents adapt to the zoom level.
+  // This keeps the toolbar and footer unscaled while the board content scales and scrollbars update.
+  board.style.zoom = state.scale;
+
+  // Ensure the board is at least as large as the viewport when zoomed out to avoid large empty margins.
+  const wrap = board.parentElement;
+  if(wrap){
+    const minW = Math.max(board.offsetWidth, Math.ceil(wrap.clientWidth / Math.max(0.0001, state.scale)));
+    const minH = Math.max(board.offsetHeight, Math.ceil(wrap.clientHeight / Math.max(0.0001, state.scale)));
+    board.style.minWidth = (minW) + 'px';
+    board.style.minHeight = (minH) + 'px';
+  }
+}
+
+function setScale(newScale){
+  const clamped = Math.min(4, Math.max(0.2, parseFloat(newScale.toFixed(2))));
+  state.scale = clamped;
+  applyScale();
+}
+
+const zoomResetBtn = el('#zoom-reset');
+if(zoomResetBtn) zoomResetBtn.addEventListener('click', ()=> setScale(1));
+
+// Ctrl + mouse wheel zoom. Attach to board's scrollable wrapper so we can adjust scroll to keep cursor point stable.
+const boardWrap = board.parentElement; // .board-wrap
+boardWrap.addEventListener('wheel', (e)=>{
+  if (!e.ctrlKey) return; // only when Ctrl is pressed
+  e.preventDefault();
+
+  const rect = board.getBoundingClientRect();
+  const wrapRect = boardWrap.getBoundingClientRect();
+
+  // Point in board-space before zoom
+  const bx = (e.clientX - rect.left) / state.scale;
+  const by = (e.clientY - rect.top) / state.scale;
+
+  // Zoom step based on wheel deltaY (normalize for typical mouse)
+  const delta = -Math.sign(e.deltaY);
+  const factor = delta > 0 ? 1.12 : 0.88;
+  const newScale = Math.min(4, Math.max(0.2, state.scale * factor));
+  setScale(newScale);
+
+  // After scaling, compute new scroll to keep the board-space point under the cursor.
+  // Because we use CSS zoom, the board.scrollWidth already reflects the zoomed size in Chromium.
+  const targetScrollLeft = Math.max(0, bx * state.scale - (e.clientX - wrapRect.left));
+  const targetScrollTop = Math.max(0, by * state.scale - (e.clientY - wrapRect.top));
+
+  // Clamp to valid scroll ranges
+  const maxLeft = Math.max(0, board.scrollWidth - wrapRect.width);
+  const maxTop = Math.max(0, board.scrollHeight - wrapRect.height);
+  boardWrap.scrollLeft = Math.max(0, Math.min(targetScrollLeft, maxLeft));
+  boardWrap.scrollTop = Math.max(0, Math.min(targetScrollTop, maxTop));
+});
+
+// --- Stroke Popup Wiring ---
+const strokePopup = el('#stroke-popup');
+const strokeSettingsBtn = el('#stroke-settings');
+const strokeColorInput = el('#stroke-color');
+const strokeWidthInput = el('#stroke-width');
+const strokeWidthLabel = el('#stroke-width-label');
+
+strokeSettingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setTool('stroke-settings');
+  const rect = strokeSettingsBtn.closest('.tool-btn-group').getBoundingClientRect();
+  strokePopup.style.left = rect.left + 'px';
+  strokePopup.style.top = rect.bottom + 4 + 'px';
+  strokePopup.style.display = (strokePopup.style.display === 'block') ? 'none' : 'block';
+  el('#text-popup').style.display = 'none';
+});
+strokeColorInput.addEventListener('input', (e) => { state.stroke.color = e.target.value; });
+strokeWidthInput.addEventListener('input', (e) => {
+  const width = parseFloat(e.target.value).toFixed(1);
+  state.stroke.width = width;
+  strokeWidthLabel.innerText = width;
+});
+strokeColorInput.value = state.stroke.color;
+strokeWidthInput.value = state.stroke.width;
+strokeWidthLabel.innerText = state.stroke.width;
+
+// --- Stroke toolbar wiring (top-bar quick controls) ---
+const toolbarStroke = el('#stroke-toolbar');
+const toolbarStrokeSlider = el('#toolbar-stroke-width');
+const toolbarStrokeValue = el('#toolbar-stroke-value');
+const toolbarStrokePreview = el('#stroke-width-preview');
+const quickStrokeColors = el('#quick-stroke-colors');
+const quickEndArrow = el('#quick-end-arrow'); // <-- NEW: Quick arrow ref
+
+function updateToolbarStrokeUI(){
+  if(!toolbarStroke) return;
+  toolbarStrokeSlider.value = state.stroke.width;
+  toolbarStrokeValue.textContent = parseFloat(state.stroke.width).toFixed(1);
+  const line = toolbarStrokePreview.querySelector('line');
+  if(line){ line.setAttribute('stroke-width', state.stroke.width); line.setAttribute('stroke', state.stroke.color); }
+  // update active color button
+  if(quickStrokeColors){
+    quickStrokeColors.querySelectorAll('button').forEach(b=>{
+      b.classList.toggle('active', b.dataset.color === state.stroke.color);
+      // add subtle outline when active
+      b.style.boxShadow = b.classList.contains('active') ? 'inset 0 0 0 2px rgba(255,255,255,0.12)' : '';
+    });
+  }
+  // <-- NEW: Sync quick arrow checkbox -->
+  if(quickEndArrow) quickEndArrow.checked = state.stroke.endArrow;
+}
+
+// --- Text toolbar wiring ---
+const toolbarText = el('#text-toolbar');
+const toolbarTextBgAlpha = el('#toolbar-text-bg-alpha');
+const toolbarTextBgAlphaValue = el('#toolbar-text-bg-alpha-value');
+const quickTextStyles = el('#quick-text-styles');
+
+function updateToolbarTextUI(){
+  if(!toolbarText) return;
+  // bg alpha
+  const a = (typeof state.text.bgAlpha === 'number') ? state.text.bgAlpha : 0;
+  if(toolbarTextBgAlpha) toolbarTextBgAlpha.value = a;
+  if(toolbarTextBgAlphaValue) toolbarTextBgAlphaValue.textContent = parseFloat(a).toFixed(2);
+  // styles
+  if(quickTextStyles){
+    quickTextStyles.querySelectorAll('button').forEach(b=>{
+      if(b.id === 'tb-text-bold') b.classList.toggle('active', state.text.bold);
+      if(b.id === 'tb-text-italic') b.classList.toggle('active', state.text.italic);
+      if(b.id === 'tb-text-underline') b.classList.toggle('active', state.text.underline);
+      if(b.id === 'tb-text-crossed') b.classList.toggle('active', state.text.crossed);
+      // set aria-pressed for accessibility
+      b.setAttribute('aria-pressed', b.classList.contains('active') ? 'true' : 'false');
+    });
+  }
+}
+
+if(toolbarTextBgAlpha){
+  toolbarTextBgAlpha.addEventListener('pointerdown', (e)=>{ startSliderHistory(); });
+  toolbarTextBgAlpha.addEventListener('input', (e)=>{
+    const v = parseFloat(e.target.value);
+    state.text.bgAlpha = v;
+    if(toolbarTextBgAlphaValue) toolbarTextBgAlphaValue.textContent = v.toFixed(2);
+    // apply live to selected text
+    state.selectedIds.forEach(id => {
+      const node = findNodeById(id);
+      if(node && node.dataset.type === 'text'){
+        const td = node.querySelector('.text-item'); if(td){ const rgb = hexToRgb(state.text.bgColor); td.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`; }
+      }
+    });
+  });
+  toolbarTextBgAlpha.addEventListener('change', ()=>{ endSliderHistory(); });
+}
+
+if(quickTextStyles){
+  const map = { 'tb-text-bold': 'bold', 'tb-text-italic': 'italic', 'tb-text-underline': 'underline', 'tb-text-crossed': 'crossed' };
+  quickTextStyles.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const key = map[b.id];
+      state.text[key] = !state.text[key];
+      updateTextPopupUI();
+      applyTextSettingsToSelection();
+      updateToolbarTextUI();
+      pushHistory();
+    });
+  });
+}
+
+// Live update while dragging: update state and preview but don't record history until change event
+if(toolbarStrokeSlider){
+  // MODIFICATION: Removed history tracking from tool setting
+  // toolbarStrokeSlider.addEventListener('pointerdown', (e)=>{ startSliderHistory(); });
+  toolbarStrokeSlider.addEventListener('input', (e)=>{
+    const v = parseFloat(e.target.value);
+    state.stroke.width = v;
+    toolbarStrokeValue.textContent = v.toFixed(1);
+    const line = toolbarStrokePreview.querySelector('line'); if(line){ line.setAttribute('stroke-width', v); }
+    // keep popup in sync
+    strokeWidthInput.value = v;
+    strokeWidthLabel.innerText = v.toFixed(1);
+  });
+  toolbarStrokeSlider.addEventListener('change', (e)=>{
+    // MODIFICATION: Removed history tracking from tool setting
+    // endSliderHistory();
+  });
+}
+
+// Quick colors
+if(quickStrokeColors){
+  quickStrokeColors.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', (ev)=>{
+      const color = b.dataset.color;
+      state.stroke.color = color;
+      strokeColorInput.value = color;
+      // update preview
+      const line = toolbarStrokePreview.querySelector('line'); if(line){ line.setAttribute('stroke', color); }
+      // mark active
+      quickStrokeColors.querySelectorAll('button').forEach(x=> x.classList.remove('active'));
+      b.classList.add('active');
+      // MODIFICATION: Removed history tracking from tool setting
+      // pushHistory();
+    });
+  });
+}
+
+// <-- NEW: Quick Arrow Wiring -->
+if (quickEndArrow) {
+  quickEndArrow.addEventListener('change', (e) => {
+    const isChecked = e.target.checked;
+    state.stroke.endArrow = isChecked;
+    // Sync with the popup
+    const popupEndArrow = el('#end-arrow');
+    if (popupEndArrow) popupEndArrow.checked = isChecked;
+  });
+}
+
+// Keep popup inputs in sync with toolbar changes
+strokeColorInput.addEventListener('input', (e) => { state.stroke.color = e.target.value; updateToolbarStrokeUI(); });
+if(strokeWidthInput){
+  // MODIFICATION: Removed history tracking from tool setting
+  // strokeWidthInput.addEventListener('pointerdown', ()=>{ startSliderHistory(); });
+  strokeWidthInput.addEventListener('input', (e) => {
+    const width = parseFloat(e.target.value);
+    state.stroke.width = width;
+    strokeWidthLabel.innerText = width.toFixed(1);
+    updateToolbarStrokeUI();
+  });
+  // MODIFICATION: Removed history tracking from tool setting
+  // strokeWidthInput.addEventListener('change', ()=> endSliderHistory());
+}
+// MODIFICATION: Removed history tracking from tool setting
+// strokeColorInput.addEventListener('change', ()=> pushHistory());
+// initialize toolbar UI
+updateToolbarStrokeUI();
+
+// Arrow controls
+const startArrowInput = el('#start-arrow');
+const endArrowInput = el('#end-arrow');
+const arrowSizeInput = el('#arrow-size');
+const arrowSizeLabel = el('#arrow-size-label');
+
+startArrowInput.addEventListener('change', (e) => {
+  state.stroke.startArrow = e.target.checked;
+});
+endArrowInput.addEventListener('change', (e) => {
+  state.stroke.endArrow = e.target.checked;
+  // <-- NEW: Sync to quick toggle
+  if (quickEndArrow) quickEndArrow.checked = e.target.checked;
+});
+if(arrowSizeInput){
+  // MODIFICATION: Removed history tracking from tool setting
+  // arrowSizeInput.addEventListener('pointerdown', ()=>{ startSliderHistory(); });
+  arrowSizeInput.addEventListener('input', (e) => {
+    state.stroke.arrowSize = parseInt(e.target.value);
+    arrowSizeLabel.innerText = e.target.value;
+  });
+  // MODIFICATION: Removed history tracking from tool setting
+  // arrowSizeInput.addEventListener('change', ()=>{ endSliderHistory(); });
+}
+
+// Initialize arrow controls
+startArrowInput.checked = state.stroke.startArrow;
+endArrowInput.checked = state.stroke.endArrow;
+arrowSizeInput.value = state.stroke.arrowSize;
+arrowSizeLabel.innerText = state.stroke.arrowSize;
+// --- End Stroke Popup ---
+
+// --- Text Popup Wiring ---
+const textPopup = el('#text-popup');
+const textSettingsBtn = el('#text-settings');
+const textBoldBtn = el('#text-bold');
+const textItalicBtn = el('#text-italic');
+const textUnderlineBtn = el('#text-underline');
+const textColorInput = el('#text-color');
+const textBgColorInput = el('#text-bg-color');
+const textBgAlphaInput = el('#text-bg-alpha');
+const textBgAlphaLabel = el('#text-bg-alpha-label');
+
+textSettingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setTool('text-settings');
+  const rect = textSettingsBtn.closest('.tool-btn-group').getBoundingClientRect();
+  textPopup.style.left = rect.left + 'px';
+  textPopup.style.top = rect.bottom + 4 + 'px';
+  textPopup.style.display = (textPopup.style.display === 'block') ? 'none' : 'block';
+  el('#stroke-popup').style.display = 'none';
+});
+
+function updateTextPopupUI() {
+  textBoldBtn.classList.toggle('active', state.text.bold);
+  textItalicBtn.classList.toggle('active', state.text.italic);
+  textUnderlineBtn.classList.toggle('active', state.text.underline);
+  // crossed/strikethrough
+  const textCrossedBtn = el('#text-crossed'); if(textCrossedBtn) textCrossedBtn.classList.toggle('active', state.text.crossed);
+  // sync toolbar if present
+  try{ updateToolbarTextUI(); }catch(e){}
+  
+  textColorInput.value = state.text.color;
+  textBgColorInput.value = state.text.bgColor;
+  textBgAlphaInput.value = state.text.bgAlpha;
+  textBgAlphaLabel.innerText = parseFloat(state.text.bgAlpha).toFixed(2);
+}
+
+function applyTextSettingsToSelection() {
+  const rgb = hexToRgb(state.text.bgColor);
+  const bgColorString = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
+
+  state.selectedIds.forEach(id => {
+    const node = findNodeById(id);
+    if (node && node.dataset.type === 'text') {
+      const textDiv = node.querySelector('.text-item');
+      textDiv.style.fontWeight = state.text.bold ? 'bold' : 'normal';
+      textDiv.style.fontStyle = state.text.italic ? 'italic' : 'normal';
+      const dec = [];
+      if(state.text.underline) dec.push('underline');
+      if(state.text.crossed) dec.push('line-through');
+      textDiv.style.textDecoration = dec.length ? dec.join(' ') : 'none';
+      // font size
+      if(state.text.fontSize) textDiv.style.fontSize = (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize);
+      textDiv.style.color = state.text.color;
+      textDiv.style.backgroundColor = bgColorString;
+    }
+  });
+  pushHistory();
+}
+
+textBoldBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  state.text.bold = !state.text.bold;
+  updateTextPopupUI();
+  applyTextSettingsToSelection();
+});
+textItalicBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  state.text.italic = !state.text.italic;
+  updateTextPopupUI();
+  applyTextSettingsToSelection();
+});
+textUnderlineBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  state.text.underline = !state.text.underline;
+  updateTextPopupUI();
+  applyTextSettingsToSelection();
+});
+
+// Strikethrough / crossed button in popup
+const textCrossedBtn = el('#text-crossed');
+if(textCrossedBtn){
+  textCrossedBtn.addEventListener('click', (e)=>{
+    e.preventDefault();
+    state.text.crossed = !state.text.crossed;
+    updateTextPopupUI();
+    applyTextSettingsToSelection();
+  });
+}
+
+textColorInput.addEventListener('input', (e) => {
+  state.text.color = e.target.value;
+  applyTextSettingsToSelection();
+});
+textBgColorInput.addEventListener('input', (e) => {
+  state.text.bgColor = e.target.value;
+  applyTextSettingsToSelection();
+});
+if(textBgAlphaInput){
+  textBgAlphaInput.addEventListener('pointerdown', ()=>{ startSliderHistory(); });
+  textBgAlphaInput.addEventListener('input', (e) => {
+    state.text.bgAlpha = parseFloat(e.target.value);
+    textBgAlphaLabel.innerText = state.text.bgAlpha.toFixed(2);
+    applyTextSettingsToSelection();
+  });
+  textBgAlphaInput.addEventListener('change', ()=>{ endSliderHistory(); });
+}
+updateTextPopupUI();
+// --- END Text Popup ---
+
+// --- Image transparency slider handler (start/end history) ---
+const transparencySliderEl = el('#transparency-slider');
+if(transparencySliderEl){
+  transparencySliderEl.addEventListener('pointerdown', (e)=>{ startSliderHistory(); });
+  transparencySliderEl.addEventListener('input', (e) => {
+    const opacity = e.target.value / 100;
+    el('#transparency-value').textContent = Math.round(e.target.value) + '%';
+    state.selectedIds.forEach(id => {
+      const node = findNodeById(id);
+      if (node && node.dataset.type === 'image') {
+        const img = node.querySelector('img');
+        if (img) img.style.opacity = opacity;
+      }
+    });
+  });
+  transparencySliderEl.addEventListener('change', (e)=>{ endSliderHistory(); });
+}
+
+// --- Global click to hide popups ---
+document.addEventListener('click', (e) => {
+  if (!strokePopup.contains(e.target) && e.target !== strokeSettingsBtn && !e.target.closest('#stroke-settings')) {
+    strokePopup.style.display = 'none';
+    if (state.tool === 'stroke-settings') setTool('draw');
+  }
+  if (!textPopup.contains(e.target) && e.target !== textSettingsBtn && !e.target.closest('#text-settings')) {
+    textPopup.style.display = 'none';
+    if (state.tool === 'text-settings') setTool('text');
+  }
+});
+
+/* Detect and mitigate common translate-extension artifacts (best-effort)
+   - We cannot disable browser extensions from the page; we can only detect
+     common injected DOM or globals and warn the user or hide injected UI.
+*/
+function hideKnownTranslateUI(){
+  const selectors = [
+    '#google_translate_element',
+    '.goog-te-banner-frame',
+    '.goog-te-combo',
+    '.goog-te-banner',
+    '#gtx-trans',
+    '.goog-gt-tt'
+  ];
+  selectors.forEach(s=>{
+    document.querySelectorAll(s).forEach(n=>{ try{ n.style.display='none'; }catch(e){} });
+  });
+  document.querySelectorAll('iframe').forEach(iframe=>{
+    try{
+      const src = iframe.src || '';
+      if(src.includes('translate.google') || src.includes('translate.googleusercontent') || src.includes('translate.goog')){
+        iframe.style.display = 'none';
+      }
+    }catch(e){}
+  });
+}
+
+function detectTranslateExtension(){
+  try{
+    const hasDomMarker = !!document.querySelector('#google_translate_element') || !!document.querySelector('.goog-te-banner-frame') || !!document.querySelector('.goog-te-banner');
+    const hasGlobal = !!window.google && (typeof window.google.translate === 'object' || typeof window.googleTranslateElementInit === 'function');
+    const hasIframe = Array.from(document.querySelectorAll('iframe')).some(f=> (f.src||'').includes('translate.google'));
+    return hasDomMarker || hasGlobal || hasIframe;
+  }catch(e){ return false; }
+}
+
+function showExtensionWarning(){
+  const w = document.getElementById('ext-warning');
+  if(!w) return;
+  w.style.display = 'flex';
+}
+
+function hideExtensionWarning(){
+  const w = document.getElementById('ext-warning'); if(!w) return; w.style.display = 'none';
+}
+
+// Wire buttons for the warning banner
+document.addEventListener('click', (e)=>{
+  if (e.target && e.target.id === 'ext-warning-hide') {
+    hideKnownTranslateUI();
+    hideExtensionWarning();
+  }
+  if (e.target && e.target.id === 'ext-warning-close') {
+    hideExtensionWarning();
+  }
+});
+
+// Run detection at init and periodically in case an extension injects UI later.
+function scheduleExtensionDetection(){
+  try{
+    if (detectTranslateExtension()) {
+      showExtensionWarning();
+      hideKnownTranslateUI();
+    }
+  }catch(e){}
+  let checks = 0;
+  const id = setInterval(()=>{
+    try{
+      checks++;
+      if (detectTranslateExtension()) {
+        showExtensionWarning(); hideKnownTranslateUI();
+      }
+      if (checks > 10) clearInterval(id);
+    }catch(e){ if (checks > 10) clearInterval(id); }
+  }, 2000);
+}
+
+// Helper functions for z-index
+function getActionNodeById(id) {
+  return findNodeById(id); // Simplified
+}
+function getZ(node){ return (node ? parseInt(node.style.zIndex || 0) : 0); }
+function setZ(node, z){
+  if(!node) return;
+  node.style.zIndex = z;
+}
+
+// --- MODIFIED: Simplified for unified Z ---
+function getZExtremes(excludeIds = new Set()){
+  const items = collectAllItems();
+  let highest = -Infinity, lowest = +Infinity;
+
+  items.forEach(it => {
+    if (excludeIds.has(it.id)) return;
+    highest = Math.max(highest, it.z);
+    lowest = Math.min(lowest, it.z);
+  });
+  
+  return { 
+    highest: (highest === -Infinity ? Z_FLOOR : highest), 
+    lowest: (lowest === +Infinity ? Z_FLOOR : lowest) 
+  };
+}
+// --- END MODIFICATION ---
+
+/* Z-index buttons */
+document.getElementById('bring-forward').addEventListener('click', ()=>{
+  if(state.selectedIds.size === 0) return;
+  const nodes = Array.from(state.selectedIds).map(id => getActionNodeById(id)).filter(Boolean);
+  const exclude = new Set(nodes.map(n => n.dataset.id));
+  
+  let targetZ = getZExtremes(exclude).highest + 10;
+  
+  nodes.sort((a,b)=> getZ(a) - getZ(b)).forEach(n => {
+    setZ(n, targetZ++);
+  });
+  
+  state.nextZ = targetZ + 10;
+  
+  // reorderSvg(); // No longer needed
+  refreshLayers();
+  pushHistory();
+});
+
+// --- MODIFIED: Reworked 'Send to Back' for unified layers ---
+document.getElementById('send-back').addEventListener('click', ()=>{
+  if(state.selectedIds.size === 0) return;
+  
+  const nodes = Array.from(state.selectedIds).map(id => getActionNodeById(id)).filter(Boolean);
+  const exclude = new Set(nodes.map(n => n.dataset.id));
+
+  const sortedNodes = nodes.sort((a,b)=> getZ(b) - getZ(a));
+  
+  let targetZ = Z_FLOOR;
+  
+  sortedNodes.forEach(n => setZ(n, targetZ++));
+  
+  const allOtherItems = collectAllItems()
+    .filter(it => exclude.has(it.id) === false)
+    .sort((a,b) => a.z - b.z); // Sort low-to-high
+
+  allOtherItems.forEach(item => {
+      const node = getActionNodeById(item.id);
+      if (getZ(node) < targetZ) {
+        setZ(node, targetZ++);
+      }
+  });
+  
+  state.nextZ = Math.max(state.nextZ, targetZ + 10);
+
+  // reorderSvg(); // No longer needed
+  refreshLayers();
+  pushHistory();
+});
+// --- END MODIFICATION ---
+
+document.getElementById('delete-item').addEventListener('click', () => {
+  isDeleting = true; // <-- SET FLAG
+  Array.from(state.selectedIds).forEach(id => {
+    const node = findNodeById(id);
+    if (node) node.remove();
+  });
+  clearSelection();
+  refreshLayers();
+  pushHistory(); // capture deletion
+  isDeleting = false; // <-- RESET FLAG
+});
+
+
+const exportBtn = document.getElementById('export-json');
+const importBtn = document.getElementById('import-json');
+if (exportBtn) exportBtn.addEventListener('click', ()=> exportWhiteboard());
+if (importBtn) importBtn.addEventListener('click', ()=>{
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='.wb';
+  inp.onchange = ()=> { if(inp.files.length > 0) importWhiteboard(inp.files[0]); };
+  inp.click();
+});
+
+/* keyboard shortcuts */
+window.addEventListener('keydown', (e)=>{
+  if (document.activeElement && document.activeElement.isContentEditable) return;
+  if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
+  if(e.key === 'v') setTool('select');
+  if(e.key === 'd') setTool('draw');
+  if(e.key === 't') setTool('text');
+  // Undo/redo keyboard shortcuts
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
+    e.preventDefault(); if (e.shiftKey) redo(); else undo();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y'){
+    e.preventDefault(); redo();
+  }
+});
+window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift') {
+        if (straightLineState && !straightLineState.isSingle) {
+            straightLineState.isInterrupted = true;
+        }
+    }
+});
+
+/* init */
+setTool('select');
+applyScale();
+refreshLayers();
+// Capture initial state for undo/redo
+undoStack = []; redoStack = []; pushHistory();
+// Start extension detection
+scheduleExtensionDetection();
+</script>
+</body>
+</html>
