@@ -687,18 +687,28 @@ function createSnapshot() {
       type: n.dataset.type,
       left: parseFloat(left),
       top: parseFloat(top),
-      width: parseFloat(width),
-      height: parseFloat(height),
       z: parseInt(n.style.zIndex || 0)
     };
+
+    // For text items, exclude width/height from snapshots to prevent resizing from creating undo history
+    // Width/height will be preserved only through export/import
+    if (n.dataset.type !== 'text') {
+      obj.width = parseFloat(width);
+      obj.height = parseFloat(height);
+    }
 
     if (n.dataset.type === 'image') {
       const img = n.querySelector('img');
       obj.src = img?.src || '';
       obj.opacity = parseFloat(img?.style.opacity || '1');
+      obj.width = parseFloat(width);
+      obj.height = parseFloat(height);
     } else if (n.dataset.type === 'text') {
       const p = n.querySelector('.text-item');
       obj.text = p?.innerText || '';
+      // Store current dimensions separately so they're preserved but don't trigger undo on resize
+      obj.width = parseFloat(width);
+      obj.height = parseFloat(height);
       obj.style = {
         fontSize: p?.style.fontSize || null,
         bold: p?.style.fontWeight === 'bold',
@@ -774,6 +784,9 @@ function restoreSnapshot(snapshot) {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
       });
       item.style.zIndex = it.z || 0;
+      // Restore text box dimensions from undo/redo snapshot
+      if (it.width) item.style.width = it.width + 'px';
+      if (it.height) item.style.height = it.height + 'px';
 
       const p = item.querySelector('.text-item');
       if (p && it.style) {
@@ -864,19 +877,32 @@ function pushHistory(){
   
   const last = undoStack[undoStack.length - 1];
   try {
-    // --- MODIFICATION: Compare snapshots *without* the 'date' property ---
+    // Compare snapshots ignoring 'date' and text item dimensions
+    // This prevents resizing text boxes from creating undo history
     if (last) {
-      // Create copies for comparison, setting 'date' to null
-      const lastForCompare = { ...last, date: null };
-      const snapForCompare = { ...snap, date: null };
+      // Create copies for comparison, removing 'date' and text dimensions
+      const stripDimensions = (snapshot) => {
+        const copy = { ...snapshot, date: null };
+        copy.items = (copy.items || []).map(item => {
+          if (item.type === 'text') {
+            // For text items, exclude width/height from comparison
+            const { width, height, ...rest } = item;
+            return rest;
+          }
+          return item;
+        });
+        return copy;
+      };
       
-      // If the snapshots are identical (ignoring the date), don't push.
+      const lastForCompare = stripDimensions(last);
+      const snapForCompare = stripDimensions(snap);
+      
+      // If the snapshots are identical (ignoring date and text dimensions), don't push
       if (JSON.stringify(lastForCompare) === JSON.stringify(snapForCompare)) {
         updateUndoRedoButtons();
         return;
       }
     }
-    // --- END MODIFICATION ---
   } catch(e) {
     // if stringify fails, proceed as normal
   }
@@ -2456,6 +2482,9 @@ async function importWhiteboard(file){
       } else if (it.type === 'text') {
         const item = createTextItem(it.text||'', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
         item.style.zIndex = it.z;
+        // Restore text box dimensions
+        if (it.width) item.style.width = it.width + 'px';
+        if (it.height) item.style.height = it.height + 'px';
         if (it.style) {
           const p = item.querySelector('.text-item');
           p.style.fontWeight = it.style.bold ? 'bold' : 'normal';
