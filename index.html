@@ -30,34 +30,38 @@
 
   /* Modernized Undo / Redo buttons */
   #undo-btn, #redo-btn {
-    padding: 6px 8px;
-    border-radius: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
     border: 1px solid transparent;
     transition: all 150ms ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
   }
 
-  #undo-btn:hover, #redo-btn:hover {
-    background: rgba(0,0,0,0.05);
-    border-color: rgba(0,0,0,0.1);
-    transform: translateY(-1px);
+  #undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled) {
+    background: rgba(0,0,0,0.08);
+    border-color: rgba(0,0,0,0.15);
+  }
+
+  #undo-btn:active:not(:disabled), #redo-btn:active:not(:disabled) {
+    background: rgba(0,0,0,0.12);
   }
 
   #undo-btn:disabled, #redo-btn:disabled {
-    opacity: 0.45;
+    opacity: 0.4;
     cursor: not-allowed;
-    transform: none;
   }
 
   /* SVG size + color inheritance */
   #undo-btn svg, #redo-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     stroke: currentColor;
-    stroke-width: 1.6;
+    stroke-width: 1.8;
     fill: none;
   }
 
@@ -113,6 +117,11 @@
   .board{
     position:relative;flex:1;margin:12px;background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;overflow:hidden;
     box-shadow:0 4px 14px rgba(2,6,23,0.06);border:1px solid #e9eef6;
+    outline: none;
+    user-select: none;
+  }
+  .board:focus {
+    outline: none;
   }
   /* scale from top-left for predictable math when focal-zooming */
   .board { transform-origin: 0 0; }
@@ -338,20 +347,16 @@
       </button>
     </div>
     <button id="undo-btn" class="tool-btn" title="Undo (Ctrl+Z)">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="1.6"
-        stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3 12l7-7v4h4a7 7 0 0 1 0 14H7"/>
-    </svg>
-  </button>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7v6h6M21 17a8 8 0 0 0-8-8H7"/>
+      </svg>
+    </button>
 
-  <button id="redo-btn" class="tool-btn" title="Redo (Ctrl+Y)">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="1.6"
-        stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 12l-7-7v4h-4a7 7 0 0 0 0 14h7"/>
-    </svg>
-  </button>
+    <button id="redo-btn" class="tool-btn" title="Redo (Ctrl+Y)">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 7v6h-6M3 17a8 8 0 0 1 8-8h6"/>
+      </svg>
+    </button>
 
     
     <div id="image-transparency" style="display:none;align-items:center;gap:4px;margin:0 8px;">
@@ -3140,6 +3145,10 @@ window.addEventListener('keydown', (e)=>{
   if(e.key === 'v') setTool('select');
   if(e.key === 'd') setTool('draw');
   if(e.key === 't') setTool('text');
+  // ALT shortcuts
+  if(e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); setTool('select'); }
+  if(e.altKey && e.key.toLowerCase() === 'd') { e.preventDefault(); setTool('draw'); }
+  if(e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); setTool('text'); }
   // Undo/redo keyboard shortcuts
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
     e.preventDefault(); if (e.shiftKey) redo(); else undo();
