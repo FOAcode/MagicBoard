@@ -675,13 +675,20 @@ function createSnapshot() {
 
   // --- Capture images & text
   board.querySelectorAll('.item').forEach(n => {
+    // Read from computed style if inline style is empty, to ensure we get the current position
+    const computedStyle = window.getComputedStyle(n);
+    const left = n.style.left || computedStyle.left || '0px';
+    const top = n.style.top || computedStyle.top || '0px';
+    const width = n.style.width || computedStyle.width || '0px';
+    const height = n.style.height || computedStyle.height || '0px';
+    
     const obj = {
       id: n.dataset.id,
       type: n.dataset.type,
-      left: n.style.left,
-      top: n.style.top,
-      width: n.style.width,
-      height: n.style.height,
+      left: parseFloat(left),
+      top: parseFloat(top),
+      width: parseFloat(width),
+      height: parseFloat(height),
       z: parseInt(n.style.zIndex || 0)
     };
 
@@ -756,14 +763,14 @@ function restoreSnapshot(snapshot) {
   // --- Restore each item
   for (const it of snapshot.items || []) {
     if (it.type === 'image') {
-      const item = createImageItem(it.src || '', parseFloat(it.left) || 80, parseFloat(it.top) || 80, parseFloat(it.width) || 240, {
+      const item = createImageItem(it.src || '', it.left ?? 80, it.top ?? 80, it.width ?? 240, {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true, opacity: it.opacity ?? 1
       });
       item.style.zIndex = it.z || 0;
     }
 
     else if (it.type === 'text') {
-      const item = createTextItem(it.text || '', parseFloat(it.left) || 80, parseFloat(it.top) || 80, {
+      const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
       });
       item.style.zIndex = it.z || 0;
@@ -1329,6 +1336,124 @@ function parseTransform(transformStr){
   return res;
 }
 
+function applyTransformToPath(pathData, tx, ty) {
+  if (!pathData || (tx === 0 && ty === 0)) return pathData;
+  
+  // Parse path data and transform all coordinates
+  // This regex matches numbers in path commands (including negative and decimal)
+  const transformed = pathData.replace(/(-?\d+\.?\d*)/g, (match) => {
+    const num = parseFloat(match);
+    // We need to be smarter about which numbers to transform
+    // In SVG paths: M/L/H/V/C/S/Q/T/A are commands
+    // We want to transform X coordinates (after M, L, C first and third args, etc)
+    // For now, just return as-is and use a better approach
+    return match;
+  });
+  
+  // Better approach: parse and rebuild the path
+  const commands = [];
+  let i = 0;
+  while (i < pathData.length) {
+    const char = pathData[i];
+    
+    // Skip whitespace and commas
+    while (i < pathData.length && /[\s,]/.test(pathData[i])) i++;
+    
+    // Check if this is a command letter
+    if (/[MmLlHhVvCcSsQqTtAaZz]/.test(char)) {
+      commands.push({ cmd: char, args: [] });
+      i++;
+    } else if (/[-\d.]/.test(char)) {
+      // Parse number
+      let num = '';
+      while (i < pathData.length && /[-\d.eE]/.test(pathData[i])) {
+        num += pathData[i];
+        i++;
+      }
+      if (commands.length > 0) {
+        commands[commands.length - 1].args.push(parseFloat(num));
+      }
+    } else {
+      i++;
+    }
+  }
+  
+  // Apply transformation to coordinates
+  let result = '';
+  commands.forEach(({ cmd, args }) => {
+    result += cmd;
+    const isRelative = cmd === cmd.toLowerCase() && cmd !== 'z';
+    
+    // Transform absolute coordinates
+    if (cmd === 'M' || cmd === 'm') {
+      // Moveto: x, y
+      for (let i = 0; i < args.length; i += 2) {
+        if (i > 0) result += ' ';
+        result += (args[i] + (isRelative ? 0 : tx)) + ',' + (args[i + 1] + (isRelative ? 0 : ty));
+      }
+    } else if (cmd === 'L' || cmd === 'l') {
+      // Lineto: x, y
+      for (let i = 0; i < args.length; i += 2) {
+        if (i > 0) result += ' ';
+        result += (args[i] + (isRelative ? 0 : tx)) + ',' + (args[i + 1] + (isRelative ? 0 : ty));
+      }
+    } else if (cmd === 'H' || cmd === 'h') {
+      // Horizontal lineto: x
+      for (let i = 0; i < args.length; i++) {
+        if (i > 0) result += ' ';
+        result += args[i] + (isRelative ? 0 : tx);
+      }
+    } else if (cmd === 'V' || cmd === 'v') {
+      // Vertical lineto: y
+      for (let i = 0; i < args.length; i++) {
+        if (i > 0) result += ' ';
+        result += args[i] + (isRelative ? 0 : ty);
+      }
+    } else if (cmd === 'C' || cmd === 'c') {
+      // Cubic bezier: x1,y1 x2,y2 x,y
+      for (let i = 0; i < args.length; i += 6) {
+        if (i > 0) result += ' ';
+        result += (args[i] + (isRelative ? 0 : tx)) + ',' + (args[i + 1] + (isRelative ? 0 : ty)) + ' ' +
+                  (args[i + 2] + (isRelative ? 0 : tx)) + ',' + (args[i + 3] + (isRelative ? 0 : ty)) + ' ' +
+                  (args[i + 4] + (isRelative ? 0 : tx)) + ',' + (args[i + 5] + (isRelative ? 0 : ty));
+      }
+    } else if (cmd === 'S' || cmd === 's') {
+      // Smooth cubic bezier: x2,y2 x,y
+      for (let i = 0; i < args.length; i += 4) {
+        if (i > 0) result += ' ';
+        result += (args[i] + (isRelative ? 0 : tx)) + ',' + (args[i + 1] + (isRelative ? 0 : ty)) + ' ' +
+                  (args[i + 2] + (isRelative ? 0 : tx)) + ',' + (args[i + 3] + (isRelative ? 0 : ty));
+      }
+    } else if (cmd === 'Q' || cmd === 'q') {
+      // Quadratic bezier: x1,y1 x,y
+      for (let i = 0; i < args.length; i += 4) {
+        if (i > 0) result += ' ';
+        result += (args[i] + (isRelative ? 0 : tx)) + ',' + (args[i + 1] + (isRelative ? 0 : ty)) + ' ' +
+                  (args[i + 2] + (isRelative ? 0 : tx)) + ',' + (args[i + 3] + (isRelative ? 0 : ty));
+      }
+    } else if (cmd === 'T' || cmd === 't') {
+      // Smooth quadratic bezier: x,y
+      for (let i = 0; i < args.length; i += 2) {
+        if (i > 0) result += ' ';
+        result += (args[i] + (isRelative ? 0 : tx)) + ',' + (args[i + 1] + (isRelative ? 0 : ty));
+      }
+    } else if (cmd === 'A' || cmd === 'a') {
+      // Arc: rx,ry x-axis-rotation large-arc-flag sweep-flag x,y
+      for (let i = 0; i < args.length; i += 7) {
+        if (i > 0) result += ' ';
+        result += args[i] + ',' + args[i + 1] + ' ' + args[i + 2] + ' ' + args[i + 3] + ' ' + args[i + 4] + ' ' +
+                  (args[i + 5] + (isRelative ? 0 : tx)) + ',' + (args[i + 6] + (isRelative ? 0 : ty));
+      }
+    } else {
+      // Z/z command has no args
+      result += args.join(',');
+    }
+    result += ' ';
+  });
+  
+  return result.trim();
+}
+
 function findNodeById(idstr){
   // Prefer stroke-wrapper (SVG wrapper) when present so selection and z-order operate on the wrapper
   // Fall back to any element with the data-id
@@ -1478,18 +1603,26 @@ function startDragSvg(element, e){
   state.selectedIds.forEach(id => {
     const n = findNodeById(id);
     if (!n) return;
+    
+    // Determine what type of element we're dealing with and get the <g> to transform
+    let gElement = null;
+    
     if (n.dataset.type === 'stroke-group') {
-      const g = n.querySelector('g');
-      const orig = g.getAttribute('transform') || '';
-      const parsed = parseTransform(orig);
-      dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+      // It's the SVG wrapper, get the <g> inside
+      gElement = n.querySelector('g');
     } else if (n.dataset.type === 'stroke') {
-      // dragging an individual stroke path
-      const orig = n.getAttribute('transform') || '';
-      const parsed = parseTransform(orig);
-      dragState.items.push({ node: n, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+      // It's an individual path, find its parent <g>
+      gElement = n.closest('g');
     } else {
+      // Not an SVG stroke, handle as HTML
       dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+      return;
+    }
+    
+    if (gElement) {
+      const orig = gElement.getAttribute('transform') || '';
+      const parsed = parseTransform(orig);
+      dragState.items.push({ node: gElement, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
     }
   });
   board.setPointerCapture(e.pointerId);
@@ -2154,13 +2287,33 @@ async function exportWhiteboard(){
   // Collect items (images/text)
   for (const n of board.querySelectorAll('.item')) {
     const t = n.dataset.type;
+    
+    // Get actual positions from inline styles first
+    let left = parseFloat(n.style.left);
+    let top = parseFloat(n.style.top);
+    let width = parseFloat(n.style.width);
+    let height = parseFloat(n.style.height);
+    
+    // If inline styles don't have these values, calculate from element's bounding rect relative to board
+    if (isNaN(left) || isNaN(top)) {
+      const boardRect = board.getBoundingClientRect();
+      const elemRect = n.getBoundingClientRect();
+      if (isNaN(left)) left = (elemRect.left - boardRect.left) / state.scale;
+      if (isNaN(top)) top = (elemRect.top - boardRect.top) / state.scale;
+    }
+    
+    if (isNaN(width) || isNaN(height)) {
+      if (isNaN(width)) width = n.offsetWidth / state.scale;
+      if (isNaN(height)) height = n.offsetHeight / state.scale;
+    }
+    
     const obj = {
       id: n.dataset.id,
       type: t,
-      left: n.style.left,
-      top: n.style.top,
-      width: n.style.width,
-      height: n.style.height,
+      left: left,
+      top: top,
+      width: width,
+      height: height,
       z: parseInt(n.style.zIndex||0)
     };
 
@@ -2202,10 +2355,17 @@ async function exportWhiteboard(){
   board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
     const g = svgWrapper.querySelector('g');
     if (!g) return;
+    
+    const transform = g.getAttribute('transform') || '';
+    
     const paths = [];
     let g_color = '#111', g_width = 2;
     g.querySelectorAll('.stroke').forEach(p => {
-      paths.push({ d: p.getAttribute('d'), markerStart: p.getAttribute('marker-start'), markerEnd: p.getAttribute('marker-end') });
+      const d = p.getAttribute('d') || '';
+      
+      // Store path data as-is, do NOT transform it
+      // The transform attribute will reposition it on import
+      paths.push({ d: d, markerStart: p.getAttribute('marker-start'), markerEnd: p.getAttribute('marker-end') });
       g_color = p.getAttribute('stroke') || g_color;
       g_width = p.getAttribute('stroke-width') || g_width;
     });
@@ -2220,7 +2380,10 @@ async function exportWhiteboard(){
       });
     }
 
-    items.push({ id: svgWrapper.dataset.id, type: 'stroke-group', z: parseInt(svgWrapper.style.zIndex||0)||0, transform: g.getAttribute('transform')||'', paths, markers, color: g_color, width: g_width });
+    // Save transform to reposition the stroke on import
+    // Make sure transform is never null or "null" string
+    const transformToSave = (transform && transform !== 'null' && typeof transform === 'string' && transform.trim()) ? transform : '';
+    items.push({ id: svgWrapper.dataset.id, type: 'stroke-group', z: parseInt(svgWrapper.style.zIndex||0)||0, transform: transformToSave, paths, markers, color: g_color, width: g_width });
   });
 
   // Prepare a sanitized copy of state for serialization (convert Set to array, keep primitives)
@@ -2284,14 +2447,14 @@ async function importWhiteboard(file){
           const b = await imgBlobFile.async('blob');
           url = URL.createObjectURL(b);
         }
-        const item = createImageItem(url, parseFloat(it.left)||80, parseFloat(it.top)||80, parseFloat(it.width)||240, { 
+        const item = createImageItem(url, it.left ?? 80, it.top ?? 80, it.width ?? 240, { 
           ...importOptions, 
           id: it.id,
           opacity: it.opacity !== undefined ? it.opacity : 1
         });
         item.style.zIndex = it.z;
       } else if (it.type === 'text') {
-        const item = createTextItem(it.text||'', parseFloat(it.left)||80, parseFloat(it.top)||80, { ...importOptions, id: it.id });
+        const item = createTextItem(it.text||'', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
         item.style.zIndex = it.z;
         if (it.style) {
           const p = item.querySelector('.text-item');
@@ -2316,7 +2479,14 @@ async function importWhiteboard(file){
           });
         }
 
-        const g = document.createElementNS('http://www.w3.org/2000/svg','g'); g.dataset.id = it.id; g.dataset.type = 'stroke-group-g'; if (it.transform) g.setAttribute('transform', it.transform); svgWrapper.appendChild(g);
+        const g = document.createElementNS('http://www.w3.org/2000/svg','g'); 
+        g.dataset.id = it.id; 
+        g.dataset.type = 'stroke-group-g'; 
+        // Only set transform if it's a non-empty string and not "null"
+        if (it.transform && it.transform !== 'null' && typeof it.transform === 'string' && it.transform.trim()) {
+          g.setAttribute('transform', it.transform);
+        }
+        svgWrapper.appendChild(g);
         (it.paths || []).forEach(p => {
           const path = document.createElementNS('http://www.w3.org/2000/svg','path'); path.classList.add('stroke'); path.dataset.type = 'stroke'; path.dataset.id = id('stroke'); path.setAttribute('d', p.d); path.setAttribute('stroke', it.color); path.setAttribute('stroke-width', it.width); if (p.markerStart) path.setAttribute('marker-start', p.markerStart); if (p.markerEnd) path.setAttribute('marker-end', p.markerEnd); g.appendChild(path); makePathSelectable(path);
         });
