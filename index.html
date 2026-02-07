@@ -1099,10 +1099,6 @@ function createTextItem(text='', x=100, y=100, options = {}){
   
   wrapper.appendChild(p);
   
-  p.addEventListener('keydown', (e)=>{
-    if(e.key === 'Enter'){ e.preventDefault(); p.blur(); }
-  });
-  
   p.addEventListener('focus', ()=>{
     if(p.innerText === 'Type...'){ p.innerText = ''; }
   });
@@ -1120,9 +1116,11 @@ function createTextItem(text='', x=100, y=100, options = {}){
   
   // --- MODIFIED: Skip focus during import ---
   if (!options.skipFocus) {
-    p.focus();
-    document.execCommand('selectAll', false, null);
-    document.getSelection().collapseToEnd();
+    setTimeout(() => {
+      p.focus();
+      document.execCommand('selectAll', false, null);
+      document.getSelection().collapseToEnd();
+    }, 0);
   }
   // --- END MODIFICATION ---
   // if (!options.skipHistory) pushHistory(); // <-- UPDATED: This line is intentionally removed/commented
@@ -1598,7 +1596,7 @@ function makePathSelectable(path){
 let dragState = null;
 
 function startDragHtml(node, e){
-  if(state.tool !== 'select') return;
+  if(state.tool !== 'select' && !(state.tool === 'text' && e.ctrlKey)) return;
   if (!state.selectedIds.has(node.dataset.id)) return;
   e.preventDefault();
   const pt = getBoardPointFromEvent(e);
@@ -1933,7 +1931,10 @@ function onBoardPointerDown(e) {
 
     // If a text box is currently active and click is outside, blur it
     const activeText = document.activeElement && document.activeElement.contentEditable === 'true';
-    if (activeText) document.activeElement.blur();
+    if (activeText) {
+      document.activeElement.blur();
+      return;
+    }
 
     // Create a new text box at the click position
     clearSelection();
@@ -2211,7 +2212,7 @@ function attachItemBehaviors(node){
       selectItem(node.dataset.id, addToSelection);
     }
     
-    if (state.tool === 'select') {
+    if (state.tool === 'select' || (state.tool === 'text' && e.ctrlKey)) {
       startDragHtml(node, e);
     }
   });
