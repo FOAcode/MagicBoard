@@ -2592,28 +2592,26 @@ boardWrap.addEventListener('wheel', (e)=>{
   e.preventDefault();
 
   const rect = board.getBoundingClientRect();
-  const wrapRect = boardWrap.getBoundingClientRect();
+  const oldScale = state.scale;
 
   // Point in board-space before zoom
-  const bx = (e.clientX - rect.left) / state.scale;
-  const by = (e.clientY - rect.top) / state.scale;
+  const bx = (e.clientX - rect.left) / oldScale;
+  const by = (e.clientY - rect.top) / oldScale;
 
   // Zoom step based on wheel deltaY (normalize for typical mouse)
   const delta = -Math.sign(e.deltaY);
   const factor = delta > 0 ? 1.12 : 0.88;
-  const newScale = Math.min(4, Math.max(0.2, state.scale * factor));
-  setScale(newScale);
+  const rawNewScale = Math.min(4, Math.max(0.2, oldScale * factor));
+  
+  setScale(rawNewScale);
+  const newScale = state.scale;
 
-  // After scaling, compute new scroll to keep the board-space point under the cursor.
-  // Because we use CSS zoom, the board.scrollWidth already reflects the zoomed size in Chromium.
-  const targetScrollLeft = Math.max(0, bx * state.scale - (e.clientX - wrapRect.left));
-  const targetScrollTop = Math.max(0, by * state.scale - (e.clientY - wrapRect.top));
+  // Adjust scroll to keep the point (bx, by) stationary relative to the viewport
+  const dx = bx * (newScale - oldScale);
+  const dy = by * (newScale - oldScale);
 
-  // Clamp to valid scroll ranges
-  const maxLeft = Math.max(0, board.scrollWidth - wrapRect.width);
-  const maxTop = Math.max(0, board.scrollHeight - wrapRect.height);
-  boardWrap.scrollLeft = Math.max(0, Math.min(targetScrollLeft, maxLeft));
-  boardWrap.scrollTop = Math.max(0, Math.min(targetScrollTop, maxTop));
+  boardWrap.scrollLeft += dx;
+  boardWrap.scrollTop += dy;
 });
 
 // --- Stroke Popup Wiring ---
