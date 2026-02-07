@@ -2,6 +2,18 @@
 
 **MagicBoard** is a lightweight, zero-setup whiteboard web application designed for rapid visual thinking, brainstorming, and live presentations. It offers a distraction-free interface with powerful sketching and annotation tools, running entirely in the browser without any backend dependencies.
 
+## 🚀 Getting Started
+
+Visit [MagicBoard Page](https://foacode.github.io/MagicBoard) for a test version of the app
+
+OR
+
+Get a copy of the repository:
+
+1.  Clone the repository.
+2.  Open `index.html` in any modern web browser.
+3.  Start creating!
+
 ## ✨ Features
 
 *   **Infinite Canvas**: Pan and zoom freely to organize your ideas.
@@ -25,18 +37,6 @@
     *   Export your board as a `.wb` file (bundles images and data).
     *   Import to resume work anytime.
 *   **History**: Robust Undo/Redo system.
-
-## 🚀 Getting Started
-
-MagicBoard is built with vanilla HTML, CSS, and JavaScript. There is no build process or server required.
-
-Visit [MagicBoard](https://foacode.github.io/MagicBoard) test version website
-
-OR
-
-1.  Clone the repository.
-2.  Open `index.html` in any modern web browser.
-3.  Start creating!
 
 ## ⌨️ Keyboard Shortcuts
 
