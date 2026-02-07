@@ -30,6 +30,10 @@
 
 MagicBoard is built with vanilla HTML, CSS, and JavaScript. There is no build process or server required.
 
+Visit [MagicBoard](https://foacode.github.io/MagicBoard) test version website
+
+OR
+
 1.  Clone the repository.
 2.  Open `index.html` in any modern web browser.
 3.  Start creating!
@@ -38,7 +42,7 @@ MagicBoard is built with vanilla HTML, CSS, and JavaScript. There is no build pr
 
 | Key | Action |
 | :--- | :--- |
-| `V` | Select Tool |
+| `S` | Select Tool |
 | `D` | Draw Tool |
 | `T` | Text Tool |
 | `Ctrl` + `Z` | Undo |

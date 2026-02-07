@@ -3142,13 +3142,13 @@ if (importBtn) importBtn.addEventListener('click', ()=>{
 window.addEventListener('keydown', (e)=>{
   if (document.activeElement && document.activeElement.isContentEditable) return;
   if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
-  if(e.key === 'v') setTool('select');
+  if(e.key === 's') setTool('select');
   if(e.key === 'd') setTool('draw');
   if(e.key === 't') setTool('text');
   // ALT shortcuts
-  if(e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); setTool('select'); }
-  if(e.altKey && e.key.toLowerCase() === 'd') { e.preventDefault(); setTool('draw'); }
-  if(e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); setTool('text'); }
+  // if(e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); setTool('select'); }
+  // if(e.altKey && e.key.toLowerCase() === 'd') { e.preventDefault(); setTool('draw'); }
+  // if(e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); setTool('text'); }
   // Undo/redo keyboard shortcuts
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
     e.preventDefault(); if (e.shiftKey) redo(); else undo();
