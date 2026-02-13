@@ -2418,7 +2418,8 @@ async function exportWhiteboard(){
         underline: p.style.textDecoration === 'underline',
         color: p.style.color,
         backgroundColor: p.style.backgroundColor,
-        fontSize: p.style.fontSize
+        fontSize: p.style.fontSize,
+        textAlign: p.style.textAlign
       };
     }
 
@@ -2541,6 +2542,7 @@ async function importWhiteboard(file){
           if (it.style.color) p.style.color = it.style.color;
           if (it.style.backgroundColor) p.style.backgroundColor = it.style.backgroundColor;
           if (it.style.fontSize) p.style.fontSize = it.style.fontSize;
+          if (it.style.textAlign) p.style.textAlign = it.style.textAlign;
         }
       } else if (it.type === 'stroke-group') {
         const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
