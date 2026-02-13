@@ -1,0 +1,16 @@
+{
+  "name": "MagicBoard",
+  "short_name": "MagicBoard",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay"],
+  "background_color": "#f6f7fb",
+  "theme_color": "#2b6cb0",
+  "icons": [
+    {
+      "src": "icon.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}

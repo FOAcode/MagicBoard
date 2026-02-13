@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#2b6cb0" />
 <title>MagicBoard</title>
-  <script src="jszip.min.js"></script>
+<link rel="icon" href="./icon.png" type="image/png" />
+<link rel="manifest" href="./manifest.json" />
+<script src="jszip.min.js"></script>
 <style>
   :root{
     --toolbar-h: 38px;
@@ -3172,6 +3175,11 @@ refreshLayers();
 undoStack = []; redoStack = []; pushHistory();
 // Start extension detection
 scheduleExtensionDetection();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js');
+  }
 </script>
 </body>
 </html>
