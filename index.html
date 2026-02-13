@@ -1774,12 +1774,53 @@ function startResizePointer(e){
   window.addEventListener('pointerup', onResizeUp);
 }
 
+const updateFontSizeDebounced = debounce((node, newWidth, newHeight, baseFontSize, origW, origH) => {
+  const textDiv = node.querySelector('.text-item');
+  if (!textDiv || !baseFontSize) return;
+
+  const scaleW = newWidth / origW;
+  const scaleH = newHeight / origH;
+  let fontSize = baseFontSize * Math.max(scaleW, scaleH);
+
+  textDiv.style.wordWrap = 'break-word';
+  textDiv.style.overflowWrap = 'break-word';
+  textDiv.style.whiteSpace = 'pre-wrap';
+  textDiv.style.overflow = 'hidden';
+
+  const maxTries = 20;
+  let tries = 0;
+  let lastGoodSize = fontSize;
+
+  do {
+    textDiv.style.fontSize = fontSize + 'px';
+    const fitsWidth = textDiv.scrollWidth <= newWidth;
+    const fitsHeight = textDiv.scrollHeight <= newHeight;
+
+    if (fitsWidth && fitsHeight) {
+      lastGoodSize = fontSize;
+      fontSize *= 1.1;
+    } else {
+      fontSize *= 0.9;
+    }
+    tries++;
+  } while (tries < maxTries);
+
+  textDiv.style.fontSize = lastGoodSize + 'px';
+
+  if (textDiv.scrollHeight > newHeight || textDiv.scrollWidth > newWidth) {
+    const finalScale = Math.min(newHeight / textDiv.scrollHeight, newWidth / textDiv.scrollWidth);
+    textDiv.style.fontSize = (lastGoodSize * finalScale) + 'px';
+  }
+}, 36); // enough to stop the "jitter" while feeling responsive
+
+
 function onResizeMove(e) {
   if (!resizeState) return;
-  // Client delta needs to be converted into board-space delta by dividing by scale
+  
   const dx = (e.clientX - resizeState.startClientX) / state.scale;
   const dy = (e.clientY - resizeState.startClientY) / state.scale;
   const node = resizeState.node;
+
   if (node.dataset.type === 'image') {
     const img = node.querySelector('img');
     if (!img) return;
@@ -1788,64 +1829,25 @@ function onResizeMove(e) {
     let newHeight = newWidth / aspect;
     node.style.width = newWidth + 'px';
     node.style.height = newHeight + 'px';
-    // Update pixelation if image is larger than natural resolution
-    try{ updateImagePixelation(node); }catch(err){}
+    try { updateImagePixelation(node); } catch(err) {}
   } 
   else if (node.dataset.type === 'text') {
     const newWidth = Math.max(50, resizeState.origW + dx);
     const newHeight = Math.max(20, resizeState.origH + dy);
+
+    // 1. Update the box size IMMEDIATELY for smooth visual dragging
     node.style.width = newWidth + 'px';
     node.style.height = newHeight + 'px';
 
-    const textDiv = node.querySelector('.text-item');
-    if (resizeState.baseFontSize) {
-      // Calculate initial scale factors
-      const scaleW = newWidth / resizeState.origW;
-      const scaleH = newHeight / resizeState.origH;
-      
-      // Start with a balanced scale that considers both dimensions
-      let fontSize = resizeState.baseFontSize * Math.max(scaleW, scaleH);
-      
-      // Set word-wrap properties for text flow
-      textDiv.style.wordWrap = 'break-word';
-      textDiv.style.overflowWrap = 'break-word';
-      textDiv.style.whiteSpace = 'pre-wrap';
-      textDiv.style.overflow = 'hidden';
-
-      // Iteratively adjust font size to find optimal fit
-      const maxTries = 20; // Prevent infinite loops
-      let tries = 0;
-      let lastGoodSize = fontSize;
-
-      do {
-        textDiv.style.fontSize = fontSize + 'px';
-        
-        const fitsWidth = textDiv.scrollWidth <= newWidth;
-        const fitsHeight = textDiv.scrollHeight <= newHeight;
-        
-        if (fitsWidth && fitsHeight) {
-          // Text fits, try increasing
-          lastGoodSize = fontSize;
-          fontSize *= 1.1;
-        } else {
-          // Text doesn't fit, scale down
-          fontSize *= 0.9;
-        }
-        
-        tries++;
-      } while (tries < maxTries);
-
-      // Use the last known good size
-      textDiv.style.fontSize = lastGoodSize + 'px';
-
-      // Final validation and adjustment if needed
-      if (textDiv.scrollHeight > newHeight || textDiv.scrollWidth > newWidth) {
-        const heightRatio = newHeight / textDiv.scrollHeight;
-        const widthRatio = newWidth / textDiv.scrollWidth;
-        const finalScale = Math.min(heightRatio, widthRatio);
-        textDiv.style.fontSize = (lastGoodSize * finalScale) + 'px';
-      }
-    }
+    // 2. Schedule the heavy font calculation to run after a short delay
+    updateFontSizeDebounced(
+      node, 
+      newWidth, 
+      newHeight, 
+      resizeState.baseFontSize, 
+      resizeState.origW, 
+      resizeState.origH
+    );
   }
 }
 
@@ -3226,6 +3228,15 @@ window.addEventListener('keyup', (e) => {
         }
     }
 });
+
+/* Debounce utility to limit rapid function calls */
+function debounce(func, wait) {
+  let timeout;
+  return function(...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
 
 /* init */
 setTool('select');
