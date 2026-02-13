@@ -1905,7 +1905,6 @@ function onBoardPointerDown(e) {
 
   // --- DRAW TOOL ---
   if (state.tool === 'draw') {
-    if (e.target.closest('.item, .stroke-wrapper, .stroke')) e.stopPropagation();
 
     if (!e.shiftKey) finalizeStrokeGroup();
 
