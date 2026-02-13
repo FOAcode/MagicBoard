@@ -1,6 +1,6 @@
 // Service Worker Script: stale-while-revalidate
 
-const CACHE_NAME = 'MagicBoard_cache_v3';
+const CACHE_NAME = 'MagicBoard_cache_v4';
 const FILES_TO_CACHE = [
     './',
     './index.html',
