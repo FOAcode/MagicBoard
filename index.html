@@ -118,7 +118,7 @@
   /* allow panning when zoomed */
   .board-wrap { overflow: auto; }
   .board{
-    position:relative;flex:1;margin:12px;background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;overflow:hidden;
+    position:relative;flex:1;margin:6px;background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;overflow:hidden;
     box-shadow:0 4px 14px rgba(2,6,23,0.06);border:1px solid #e9eef6;
     outline: none;
     user-select: none;
@@ -398,7 +398,7 @@
       </div>
       <div id="quick-arrow-toggle" style="display:flex; align-items:center; gap: 4px; margin-left: 8px;">
         <input type="checkbox" id="quick-end-arrow" title="Arrow at end">
-        <label for="quick-end-arrow" style="font-size:13px; cursor:pointer;">End Arrow</label>
+        <label for="quick-end-arrow" style="font-size:13px; cursor:pointer;">Arrow</label>
       </div>
     </div>
     
@@ -467,6 +467,13 @@
       <div class="board" id="board" tabindex="0">
         <div class="board-grid"></div>
         <svg class="board-strokes" id="strokes-svg"></svg>
+        
+        <svg id="guide-layer" style="position:absolute; inset:0; pointer-events:none; width:100%; height:100%; overflow:visible;">
+          <g id="drawing-guides" style="display: none;">
+            <line id="guide-h" stroke="#ccc" stroke-width="1" stroke-dasharray="4 2" x1="-10000" x2="10000" />
+            <line id="guide-v" stroke="#ccc" stroke-width="1" stroke-dasharray="4 2" y1="-10000" y2="10000" />
+          </g>
+        </svg>
       </div>
     </div>
 
@@ -2033,25 +2040,42 @@ function onBoardPointerDown(e) {
   }
 }
 
-function onBoardPointerMove(e){
+function onBoardPointerMove(e) {
   if (isLassoing) {
     const pt = getBoardPointFromEvent(e);
     const x = pt.x, y = pt.y;
-    lassoPoints.push({x, y});
+    lassoPoints.push({ x, y });
     lassoPath.setAttribute('d', lassoPath.getAttribute('d') + ` L ${x} ${y}`);
     return;
   }
-  if(drawing && currentPath){
+
+  const guides = document.getElementById('drawing-guides');
+  const guideH = document.getElementById('guide-h');
+  const guideV = document.getElementById('guide-v');
+
+  if (drawing && currentPath) {
     const pt = getBoardPointFromEvent(e);
     const x = pt.x, y = pt.y;
-    
-  if (straightLineState) {
-  // Determine anchor for segment snapping: last point for polylines, start for first segment
-  const anchorX = straightLineState.lastX ?? straightLineState.startX;
-  const anchorY = straightLineState.lastY ?? straightLineState.startY;
+
+    if (straightLineState) {
+      const anchorX = straightLineState.lastX ?? straightLineState.startX;
+      const anchorY = straightLineState.lastY ?? straightLineState.startY;
+
+      // --- UPDATED GUIDING LINES LOGIC (Follow Mouse) ---
+      if (guides && guideH && guideV) {
+        guides.style.display = 'block';
+        
+        // Move the horizontal guide to follow the mouse Y
+        guideH.setAttribute('y1', y);
+        guideH.setAttribute('y2', y);
+        
+        // Move the vertical guide to follow the mouse X
+        guideV.setAttribute('x1', x);
+        guideV.setAttribute('x2', x);
+      }
+      // --- END GUIDING LINES LOGIC ---
 
       if (state.stroke.startArrow || state.stroke.endArrow) {
-        // Create arrow marker definitions if needed
         const markerId = `arrow-${currentPath.dataset.id}`;
         const defsId = `defs-${currentPath.dataset.id}`;
         let defs = svg.querySelector(`#${defsId}`);
@@ -2059,7 +2083,7 @@ function onBoardPointerMove(e){
           defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
           defs.id = defsId;
           svg.insertBefore(defs, svg.firstChild);
-          
+
           const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
           marker.id = markerId;
           marker.setAttribute('viewBox', '0 0 10 10');
@@ -2068,22 +2092,20 @@ function onBoardPointerMove(e){
           marker.setAttribute('markerWidth', state.stroke.arrowSize);
           marker.setAttribute('markerHeight', state.stroke.arrowSize);
           marker.setAttribute('orient', 'auto-start-reverse');
-          
+
           const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
           arrowPath.setAttribute('fill', state.stroke.color);
-          
+
           marker.appendChild(arrowPath);
           defs.appendChild(marker);
         }
 
-        // Update marker color and size
         const marker = defs.querySelector(`#${markerId}`);
         marker.setAttribute('markerWidth', state.stroke.arrowSize);
         marker.setAttribute('markerHeight', state.stroke.arrowSize);
         marker.querySelector('path').setAttribute('fill', state.stroke.color);
-        
-        // Apply markers
+
         if (state.stroke.startArrow && state.stroke.endArrow) {
           currentPath.setAttribute('marker-start', `url(#${markerId})`);
           currentPath.setAttribute('marker-end', `url(#${markerId})`);
@@ -2098,44 +2120,52 @@ function onBoardPointerMove(e){
         currentPath.removeAttribute('marker-start');
         currentPath.removeAttribute('marker-end');
       }
-      
+
       if (e.altKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         currentPath.setAttribute('d', straightLineState.basePath + ` L ${snapped.x} ${snapped.y}`);
+        
+        // Optional: If Alt is held and snapped, update guides to match the snapped position
+        guideH.setAttribute('y1', snapped.y);
+        guideH.setAttribute('y2', snapped.y);
+        guideV.setAttribute('x1', snapped.x);
+        guideV.setAttribute('x2', snapped.x);
       } else {
         currentPath.setAttribute('d', straightLineState.basePath + ` L ${x} ${y}`);
       }
     } else {
-      // Regular freehand drawing - no arrows
+      if (guides) guides.style.display = 'none';
       currentPath.removeAttribute('marker-start');
       currentPath.removeAttribute('marker-end');
-      // Add point to the path and update with a smoothed curve
       addPointToPath(currentPath, x, y);
     }
+  } else {
+    if (guides) guides.style.display = 'none';
   }
   onPointerMove(e);
 }
-
 function onBoardPointerUp(e){
   const pt = getBoardPointFromEvent(e);
   const x = pt.x, y = pt.y;
-  let didDrawOrLasso = false; // <-- NEW flag
+  let didDrawOrLasso = false;
+
+  // --- HIDE GUIDES ---
+  const guides = document.getElementById('drawing-guides');
+  if (guides) guides.style.display = 'none';
 
   if (isLassoing) {
     isLassoing = false;
-    didDrawOrLasso = true; // Mark that an action occurred
+    didDrawOrLasso = true; 
     lassoPath.remove();
     lassoPath = null;
     const boardRect = board.getBoundingClientRect();
-    // --- MODIFIED: Look for .item and .stroke-wrapper ---
-    // Select images and text items by their center point
+
     const allItems = board.querySelectorAll('.item');
     clearSelection();
     allItems.forEach(node => {
       const type = node.dataset.type;
       if (type !== 'image' && type !== 'text') return;
       const nRect = node.getBoundingClientRect();
-      // Convert element center into board-space coordinates (unscaled)
       const itemCenterX = ((nRect.left - boardRect.left) + nRect.width / 2) / state.scale;
       const itemCenterY = ((nRect.top - boardRect.top) + nRect.height / 2) / state.scale;
       const centerPoint = { x: itemCenterX, y: itemCenterY };
@@ -2145,8 +2175,6 @@ function onBoardPointerUp(e){
       }
     });
 
-    // Select individual stroke <path> elements by their bounding-box center so strokes in a group
-    // can be selected separately instead of selecting the whole wrapper.
     board.querySelectorAll('path.stroke').forEach(p => {
       const pRect = p.getBoundingClientRect();
       const px = ((pRect.left - boardRect.left) + pRect.width / 2) / state.scale;
@@ -2164,14 +2192,14 @@ function onBoardPointerUp(e){
   
   if(drawing && currentPath){
     drawing = false;
-    didDrawOrLasso = true; // Mark that an action occurred
+    didDrawOrLasso = true; 
     try { board.releasePointerCapture?.(e.pointerId); } catch(err) {}
     
     if (straightLineState) {
-      // Snap final endpoint when ALT is held
       const anchorX = straightLineState.lastX ?? straightLineState.startX;
       const anchorY = straightLineState.lastY ?? straightLineState.startY;
       let finalX = x, finalY = y;
+      
       if (e.altKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         finalX = snapped.x; finalY = snapped.y;
@@ -2192,20 +2220,17 @@ function onBoardPointerUp(e){
         currentPath = null;
       }
     } else {
-      // Ensure final point is added for free-hand stroke
       if (currentPath) addPointToPath(currentPath, x, y);
-      currentPath = null; // Free-hand stroke is finalized on pointer up
+      currentPath = null; 
     }
   }
 
-  // Record history ONLY for drawing/lassoing actions
   if (didDrawOrLasso && !isRestoringHistory) {
     pushHistory();
   }
   
-  onPointerUp(e); // This handles drag history
+  onPointerUp(e); 
 }
-
 
 /* Drag/drop/paste */
 board.addEventListener('dragover', (e)=>{ e.preventDefault(); board.style.opacity=0.95; });
