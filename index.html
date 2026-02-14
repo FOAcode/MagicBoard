@@ -139,9 +139,25 @@
     position:absolute;touch-action:none;user-select:none;box-sizing:border-box;
   }
   .item.selected{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px;}
-  .item img{display:block;max-width:100%;height:auto;pointer-events:none;user-select:none;border-radius:6px;}
+  /* Images are contained within their box and not stretched, with a pixelated option for when zoomed in */
+  .item img{
+    display:block;
+    width:100%;
+    height:100%;
+    object-fit: contain; /* keeps aspect ratio */
+    pointer-events:none;
+    user-select:none;
+    border-radius:6px;
+  }
   /* When an image is displayed larger than its natural size we can apply pixelation */
-  .item img.pixelated { image-rendering: pixelated; image-rendering: -moz-crisp-edges; }
+  .item img.pixelated { 
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges; 
+  }
+  .item img.enhanced {
+    image-rendering: auto;
+    filter: contrast(1.05) saturate(1.05) brightness(1.02);
+  }
   .text-item{
     padding:6px 8px;min-width:50px;min-height:24px;
     background: transparent;
@@ -1070,20 +1086,28 @@ function createImageItem(src, x=80, y=80, w=240, options = {}){
 // If an image is displayed larger than its intrinsic width, apply pixelated rendering
 function updateImagePixelation(wrapper){
   if(!wrapper) return;
-  const img = wrapper.querySelector && wrapper.querySelector('img');
-  if(!img) return;
+
+  const img = wrapper.querySelector?.('img');
+  if(!img || !img.complete) return;
+
   const natural = img.naturalWidth || 0;
-  // try to read the intended unscaled width from style, otherwise derive from bounding rect
+
   let intended = parseFloat(wrapper.style.width);
   if(!intended || isNaN(intended)){
     intended = (wrapper.getBoundingClientRect().width || 0) / (state.scale || 1);
   }
-  if(natural > 0 && intended > natural){
+
+  const isUpscaled = natural > 0 && intended > natural;
+
+  if(isUpscaled){
     img.classList.add('pixelated');
+    img.classList.add('enhanced');
   } else {
     img.classList.remove('pixelated');
+    img.classList.remove('enhanced');
   }
 }
+
 
 // --- MODIFIED: Added options parameter for import ---
 function createTextItem(text='', x=100, y=100, options = {}){
