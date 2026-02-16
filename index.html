@@ -1942,7 +1942,7 @@ function onBoardPointerDown(e) {
     if (!e.shiftKey) finalizeStrokeGroup();
 
     if (e.shiftKey) {
-      const isSingleLineMode = e.ctrlKey;
+      const isSingleLineMode = e.altKey;
       if (straightLineState && straightLineState.isInterrupted && !isSingleLineMode)
         finalizeStrokeGroup();
 
@@ -1952,7 +1952,7 @@ function onBoardPointerDown(e) {
         const anchorX = straightLineState.lastX ?? straightLineState.startX;
         const anchorY = straightLineState.lastY ?? straightLineState.startY;
         let finalX = x, finalY = y;
-        if (e.altKey) {
+        if (e.ctrlKey) {
           const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
           finalX = snapped.x; finalY = snapped.y;
         }
@@ -2121,7 +2121,7 @@ function onBoardPointerMove(e) {
         currentPath.removeAttribute('marker-end');
       }
 
-      if (e.altKey) {
+      if (e.ctrlKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         currentPath.setAttribute('d', straightLineState.basePath + ` L ${snapped.x} ${snapped.y}`);
         
@@ -2200,7 +2200,7 @@ function onBoardPointerUp(e){
       const anchorY = straightLineState.lastY ?? straightLineState.startY;
       let finalX = x, finalY = y;
       
-      if (e.altKey) {
+      if (e.ctrlKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         finalX = snapped.x; finalY = snapped.y;
       }
@@ -3258,10 +3258,6 @@ window.addEventListener('keydown', (e)=>{
   if(e.key === 's') setTool('select');
   if(e.key === 'd') setTool('draw');
   if(e.key === 't') setTool('text');
-  // ALT shortcuts
-  // if(e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); setTool('select'); }
-  // if(e.altKey && e.key.toLowerCase() === 'd') { e.preventDefault(); setTool('draw'); }
-  // if(e.altKey && e.key.toLowerCase() === 't') { e.preventDefault(); setTool('text'); }
   // Undo/redo keyboard shortcuts
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
     e.preventDefault(); if (e.shiftKey) redo(); else undo();
