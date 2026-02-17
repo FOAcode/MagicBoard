@@ -3279,6 +3279,16 @@ if (importBtn) importBtn.addEventListener('click', ()=>{
 
 /* keyboard shortcuts */
 window.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape') {
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.isContentEditable) {
+      activeEl.blur();
+    }
+    clearSelection();
+    setTool('select');
+    return;
+  }
+
   if (document.activeElement && document.activeElement.isContentEditable) return;
   if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
   if(e.key === 's') setTool('select');
