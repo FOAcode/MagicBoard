@@ -600,6 +600,10 @@ function parseRgba(rgbaString) {
 }
 // --- END NEW ---
 
+let lastMouseEvent = null;
+window.addEventListener('mousemove', e => {
+  lastMouseEvent = e;
+});
 
 // --- MODIFIED: Unified z-index system ---
 const Z_FLOOR = 1;
@@ -2255,12 +2259,34 @@ window.addEventListener('paste', (ev)=>{
   for(const it of items){
     if(it.type.startsWith('image/')){
       const file = it.getAsFile();
+      if (!file) continue;
       const url = URL.createObjectURL(file);
-      // Place pasted image centered in current board viewport (account for scale)
-      const rect = board.getBoundingClientRect();
-      const centerX = (rect.width / 2) / state.scale;
-      const centerY = (rect.height / 2) / state.scale;
-      createImageItem(url, centerX - 100, centerY - 80, 300);
+      
+      let x, y;
+      const boardRect = board.getBoundingClientRect();
+      const imageWidth = 300; 
+
+      if (lastMouseEvent) {
+        let mouseX = lastMouseEvent.clientX;
+        let mouseY = lastMouseEvent.clientY;
+
+        // Clamp mouse position to be inside canvas bounds
+        const clampedX = Math.max(boardRect.left, Math.min(mouseX, boardRect.right));
+        const clampedY = Math.max(boardRect.top, Math.min(mouseY, boardRect.bottom));
+
+        // Convert to board coordinates
+        x = (clampedX - boardRect.left) / state.scale;
+        y = (clampedY - boardRect.top) / state.scale;
+
+      } else {
+        // Fallback to center if no mouse event has been recorded
+        const centerX = (boardRect.width / 2) / state.scale;
+        const centerY = (boardRect.height / 2) / state.scale;
+        x = centerX - 100;
+        y = centerY - 80;
+      }
+      
+      createImageItem(url, x, y, imageWidth);
       ev.preventDefault();
       return;
     }
