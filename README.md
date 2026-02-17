@@ -49,8 +49,9 @@ Get a copy of the repository:
 | `Ctrl` + `Y` | Redo |
 | `Delete` / `Backspace` | Delete Selected Item |
 | `Ctrl` + `Scroll` | Zoom In/Out |
-| `Shift` (while drawing) | Draw Straight Line |
-| `Alt` (while drawing) | Snap Line Angle (15°) |
+| `Shift` (while drawing) | Draw Straight Connected Lines |
+| `Shift` + `Alt` (while drawing) | Draw Straight Individual Lines |
+| `Shift` + `Ctrl` (while drawing) | Snap Line Angle (15°) |
 
 ## 🛠️ Technologies
 
