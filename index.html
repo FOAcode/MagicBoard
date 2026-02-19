@@ -316,7 +316,8 @@
   .popup-row-buttons .small-btn#text-italic { font-style: italic; }
   .popup-row-buttons .small-btn#text-underline { text-decoration: underline; }
   
-  .popup-row-buttons .small-btn.active {
+  .popup-row-buttons .small-btn.active,
+  #quick-text-styles .small-btn.active {
     background: #e6f1ff;
     border-color: #b2d6ff;
     color: var(--accent);
@@ -1861,6 +1862,47 @@ const updateFontSizeDebounced = debounce((node, newWidth, newHeight, baseFontSiz
   }
 }, 36); // enough to stop the "jitter" while feeling responsive
 
+function fitTextToBox(textDiv) {
+    const node = textDiv.closest('.item');
+    if (!node) return;
+
+    const newWidth = node.clientWidth;
+    const newHeight = node.clientHeight;
+    let fontSize = parseFloat(window.getComputedStyle(textDiv).fontSize);
+
+    textDiv.style.wordWrap = 'break-word';
+    textDiv.style.overflowWrap = 'break-word';
+    textDiv.style.whiteSpace = 'pre-wrap';
+    textDiv.style.overflow = 'hidden';
+
+    const maxTries = 20;
+    let tries = 0;
+    let lastGoodSize = fontSize;
+
+    // Iteratively find a font size that fits
+    do {
+        textDiv.style.fontSize = fontSize + 'px';
+        const fitsWidth = textDiv.scrollWidth <= newWidth + 2; // Add tolerance
+        const fitsHeight = textDiv.scrollHeight <= newHeight + 2;
+
+        if (fitsWidth && fitsHeight) {
+            lastGoodSize = fontSize;
+            fontSize *= 1.05; // Increase font size
+        } else {
+            fontSize *= 0.95; // Decrease font size
+        }
+        tries++;
+    } while (tries < maxTries);
+
+    textDiv.style.fontSize = lastGoodSize + 'px';
+
+    // Final check to shrink if still overflowing
+    if (textDiv.scrollHeight > newHeight + 2 || textDiv.scrollWidth > newWidth + 2) {
+        const finalScale = Math.min((newHeight + 2) / textDiv.scrollHeight, (newWidth + 2) / textDiv.scrollWidth);
+        textDiv.style.fontSize = (lastGoodSize * finalScale) + 'px';
+    }
+}
+
 
 function onResizeMove(e) {
   if (!resizeState) return;
@@ -3035,11 +3077,11 @@ function applyTextSettingsToSelection() {
       if(state.text.underline) dec.push('underline');
       if(state.text.crossed) dec.push('line-through');
       textDiv.style.textDecoration = dec.length ? dec.join(' ') : 'none';
-      // font size
-      if(state.text.fontSize) textDiv.style.fontSize = (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize);
       textDiv.style.color = state.text.color;
       textDiv.style.backgroundColor = bgColorString;
       textDiv.style.textAlign = state.text.align;
+
+      fitTextToBox(textDiv);
     }
   });
   pushHistory();
