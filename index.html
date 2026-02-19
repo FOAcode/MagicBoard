@@ -693,6 +693,10 @@ const svg = el('#strokes-svg'); // This is the main SVG for lasso
 const layerList = el('#layer-list');
 const TOOL_BTN = document.querySelectorAll('.tool-btn');
 
+const drawingGuides = el('#drawing-guides');
+const guideH = el('#guide-h');
+const guideV = el('#guide-v');
+
 /* Helper: convert client event to board-local coordinates accounting for CSS scale */
 function getBoardPointFromEvent(e){
   const rect = board.getBoundingClientRect();
@@ -2668,6 +2672,17 @@ board.addEventListener('pointerdown', onBoardPointerDown, {capture: true});
 board.addEventListener('pointermove', onBoardPointerMove);
 board.addEventListener('pointerup', onBoardPointerUp);
 
+board.addEventListener('pointermove', (e) => {
+    if (state.tool === 'draw' && e.shiftKey) {
+        const pt = getBoardPointFromEvent(e);
+        drawingGuides.style.display = 'block';
+        guideH.setAttribute('y1', pt.y);
+        guideH.setAttribute('y2', pt.y);
+        guideV.setAttribute('x1', pt.x);
+        guideV.setAttribute('x2', pt.x);
+    }
+});
+
 
 /* Toolbar wiring */
 document.getElementById('tool-select').addEventListener('click', ()=>setTool('select'));
@@ -3279,6 +3294,19 @@ if (importBtn) importBtn.addEventListener('click', ()=>{
 
 /* keyboard shortcuts */
 window.addEventListener('keydown', (e)=>{
+  const isInputFocused = !!document.activeElement && (document.activeElement.isContentEditable || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName));
+
+  if (e.key === 'Shift' && state.tool === 'draw' && !isInputFocused) {
+    drawingGuides.style.display = 'block';
+    if (lastMouseEvent) {
+        const pt = getBoardPointFromEvent(lastMouseEvent);
+        guideH.setAttribute('y1', pt.y);
+        guideH.setAttribute('y2', pt.y);
+        guideV.setAttribute('x1', pt.x);
+        guideV.setAttribute('x2', pt.x);
+    }
+  }
+
   if (e.key === 'Escape') {
     const activeEl = document.activeElement;
     if (activeEl && activeEl.isContentEditable) {
@@ -3289,7 +3317,7 @@ window.addEventListener('keydown', (e)=>{
     return;
   }
 
-  if (document.activeElement && document.activeElement.isContentEditable) return;
+  if (isInputFocused) return;
   if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
   if(e.key === 's') setTool('select');
   if(e.key === 'd') setTool('draw');
@@ -3304,6 +3332,7 @@ window.addEventListener('keydown', (e)=>{
 });
 window.addEventListener('keyup', (e) => {
     if (e.key === 'Shift') {
+        drawingGuides.style.display = 'none';
         if (straightLineState && !straightLineState.isSingle) {
             straightLineState.isInterrupted = true;
         }
