@@ -394,12 +394,21 @@
       <div id="quick-stroke-colors" style="display:flex;gap:6px;align-items:center;margin-left:6px">
         <button class="tool-btn" data-color="#2b6cb0" title="Blue" style="width:28px;height:28px;padding:0;border-radius:6px;background:#2b6cb0;border:1px solid rgba(0,0,0,0.08)"></button>
         <button class="tool-btn" data-color="#e53e3e" title="Red" style="width:28px;height:28px;padding:0;border-radius:6px;background:#e53e3e;border:1px solid rgba(0,0,0,0.08)"></button>
+        <button class="tool-btn" data-color="#ff9234" title="Orange" style="width:28px;height:28px;padding:0;border-radius:6px;background:#ff9234;border:1px solid rgba(0,0,0,0.08)"></button>
         <button class="tool-btn" data-color="#111111" title="Black" style="width:28px;height:28px;padding:0;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.06)"></button>
       </div>
-      <div id="quick-arrow-toggle" style="display:flex; align-items:center; gap: 4px; margin-left: 8px;">
-        <input type="checkbox" id="quick-end-arrow" title="Arrow at end">
-        <label for="quick-end-arrow" style="font-size:13px; cursor:pointer;">Arrow</label>
-      </div>
+      <div id="quick-arrow-toggle" class="tool-btn-group" style="margin-left: 8px;">
+        <button class="tool-btn" id="quick-start-arrow" title="Arrow at start" style="padding: 6px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19V5M5 12l7-7 7 7"/>
+            </svg>
+        </button>
+        <button class="tool-btn" id="quick-end-arrow" title="Arrow at end" style="padding: 6px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14M19 12l-7 7-7-7"/>
+            </svg>
+        </button>
+    </div>
     </div>
     
     <div id="text-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
@@ -2782,6 +2791,7 @@ const toolbarStrokeSlider = el('#toolbar-stroke-width');
 const toolbarStrokeValue = el('#toolbar-stroke-value');
 const toolbarStrokePreview = el('#stroke-width-preview');
 const quickStrokeColors = el('#quick-stroke-colors');
+const quickStartArrow = el('#quick-start-arrow');
 const quickEndArrow = el('#quick-end-arrow'); // <-- NEW: Quick arrow ref
 
 function updateToolbarStrokeUI(){
@@ -2799,7 +2809,8 @@ function updateToolbarStrokeUI(){
     });
   }
   // <-- NEW: Sync quick arrow checkbox -->
-  if(quickEndArrow) quickEndArrow.checked = state.stroke.endArrow;
+  if(quickStartArrow) quickStartArrow.classList.toggle('active', state.stroke.startArrow);
+  if(quickEndArrow) quickEndArrow.classList.toggle('active', state.stroke.endArrow);
 }
 
 // --- Text toolbar wiring ---
@@ -2896,13 +2907,22 @@ if(quickStrokeColors){
 }
 
 // <-- NEW: Quick Arrow Wiring -->
+if (quickStartArrow) {
+  quickStartArrow.addEventListener('click', () => {
+    const isActive = quickStartArrow.classList.toggle('active');
+    state.stroke.startArrow = isActive;
+    // Sync with the popup
+    const popupStartArrow = el('#start-arrow');
+    if (popupStartArrow) popupStartArrow.checked = isActive;
+  });
+}
 if (quickEndArrow) {
-  quickEndArrow.addEventListener('change', (e) => {
-    const isChecked = e.target.checked;
-    state.stroke.endArrow = isChecked;
+  quickEndArrow.addEventListener('click', () => {
+    const isActive = quickEndArrow.classList.toggle('active');
+    state.stroke.endArrow = isActive;
     // Sync with the popup
     const popupEndArrow = el('#end-arrow');
-    if (popupEndArrow) popupEndArrow.checked = isChecked;
+    if (popupEndArrow) popupEndArrow.checked = isActive;
   });
 }
 
@@ -2933,11 +2953,12 @@ const arrowSizeLabel = el('#arrow-size-label');
 
 startArrowInput.addEventListener('change', (e) => {
   state.stroke.startArrow = e.target.checked;
+  if (quickStartArrow) quickStartArrow.classList.toggle('active', e.target.checked);
 });
 endArrowInput.addEventListener('change', (e) => {
   state.stroke.endArrow = e.target.checked;
   // <-- NEW: Sync to quick toggle
-  if (quickEndArrow) quickEndArrow.checked = e.target.checked;
+  if (quickEndArrow) quickEndArrow.classList.toggle('active', e.target.checked);
 });
 if(arrowSizeInput){
   // MODIFICATION: Removed history tracking from tool setting
