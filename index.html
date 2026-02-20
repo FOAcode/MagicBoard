@@ -3024,7 +3024,7 @@ function trimCanvasWhitespace(canvas, marginPixels = 25) {
   return trimmedCanvas;
 }
 
-// Copy board content as PNG to clipboard - captures the refit view
+// Copy board content as PNG to clipboard - captures only the content area dynamically sized
 async function copyContentAsPNG() {
   const bounds = calculateContentBounds();
   if (!bounds.hasContent) {
@@ -3039,31 +3039,36 @@ async function copyContentAsPNG() {
     const originalScrollLeft = wrap.scrollLeft;
     const originalScrollTop = wrap.scrollTop;
 
-    // Apply refit to show the content properly
-    refitToContent();
+    // Set a scale that fits the content nicely (but not mandatory - use original scale if better)
+    setScale(1); // Use 1:1 scale for crisp capture
 
-    // Wait a moment for the view to settle
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait a moment for the scale to apply
+    await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Get the visible area dimensions
-    const visibleWidth = wrap.clientWidth;
-    const visibleHeight = wrap.clientHeight;
+    // Add padding around content
+    const padding = 30;
+    const contentX = Math.max(0, bounds.minX - padding);
+    const contentY = Math.max(0, bounds.minY - padding);
+    const contentWidth = (bounds.maxX - bounds.minX) + (padding * 2);
+    const contentHeight = (bounds.maxY - bounds.minY) + (padding * 2);
 
-    // Create a canvas for capturing
+    console.log(`Capturing content: ${contentWidth}x${contentHeight} at (${contentX}, ${contentY})`);
+
+    // Create a canvas element sized to the exact content bounds
     const tempCanvas = document.createElement('div');
     tempCanvas.style.position = 'absolute';
     tempCanvas.style.left = '-9999px';
     tempCanvas.style.top = '0';
-    tempCanvas.style.width = visibleWidth + 'px';
-    tempCanvas.style.height = visibleHeight + 'px';
+    tempCanvas.style.width = contentWidth + 'px';
+    tempCanvas.style.height = contentHeight + 'px';
     tempCanvas.style.overflow = 'hidden';
     tempCanvas.style.background = 'white';
     
-    // Clone the board and position it to show what's visible
+    // Clone the board and position it to show only the content area
     const boardClone = board.cloneNode(true);
     boardClone.style.position = 'absolute';
-    boardClone.style.top = (-wrap.scrollTop / state.scale) + 'px';
-    boardClone.style.left = (-wrap.scrollLeft / state.scale) + 'px';
+    boardClone.style.top = (-contentY / state.scale) + 'px';
+    boardClone.style.left = (-contentX / state.scale) + 'px';
     boardClone.style.transform = `scale(${state.scale})`;
     boardClone.style.transformOrigin = '0 0';
     boardClone.style.width = board.offsetWidth + 'px';
@@ -3080,9 +3085,6 @@ async function copyContentAsPNG() {
       allowTaint: true,
       foreignObjectRendering: false
     });
-
-    // Trim excess whitespace but keep margins
-    canvas = trimCanvasWhitespace(canvas, 25);
 
     // Clean up
     document.body.removeChild(tempCanvas);
