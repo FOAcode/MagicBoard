@@ -2707,7 +2707,7 @@ async function importWhiteboard(file){
             marker.setAttribute('refX', arrowSize);
             marker.setAttribute('refY', arrowSize / 2);
             marker.setAttribute('markerUnits', 'strokeWidth');
-            marker.setAttribute('orient', 'auto');
+            marker.setAttribute('orient', 'auto-start-reverse');
             marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
 
             const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
