@@ -8,6 +8,7 @@
 <link rel="icon" href="./icon.png" type="image/png" />
 <link rel="manifest" href="./manifest.json" />
 <script src="jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
     --toolbar-h: 38px;
@@ -428,6 +429,12 @@
 
     <div style="display:flex;align-items:center;gap:6px;">
       <button class="tool-btn" id="zoom-reset" title="ReFit">ReFit</button>
+      <button class="tool-btn" id="copy-png" title="Copy as PNG">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
     </div>
 
     <button class="tool-btn" id="bring-forward" title="Bring to Front">
@@ -2814,7 +2821,189 @@ function setScale(newScale){
 }
 
 const zoomResetBtn = el('#zoom-reset');
-if(zoomResetBtn) zoomResetBtn.addEventListener('click', ()=> setScale(1));
+const copyPngBtn = el('#copy-png');
+
+// Calculate bounding box of all content on the board
+function calculateContentBounds() {
+  const boardRect = board.getBoundingClientRect();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let hasContent = false;
+
+  // Check all items (images, text)
+  board.querySelectorAll('.item').forEach(item => {
+    hasContent = true;
+    const rect = item.getBoundingClientRect();
+    const x = (rect.left - boardRect.left) / state.scale;
+    const y = (rect.top - boardRect.top) / state.scale;
+    const w = rect.width / state.scale;
+    const h = rect.height / state.scale;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+  });
+
+  // Check all stroke wrappers - use getBBox for accurate SVG bounds
+  board.querySelectorAll('.stroke-wrapper').forEach(wrapper => {
+    try {
+      // Get the SVG element's bounding box
+      const bbox = wrapper.getBBox?.();
+      if (bbox && (bbox.width > 0 || bbox.height > 0)) {
+        hasContent = true;
+        // Account for the wrapper's position and the inner SVG's viewBox
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const offsetX = (wrapperRect.left - boardRect.left) / state.scale;
+        const offsetY = (wrapperRect.top - boardRect.top) / state.scale;
+        
+        // Get actual SVG dimensions
+        const g = wrapper.querySelector('g');
+        if (g) {
+          const gBbox = g.getBBox?.();
+          if (gBbox) {
+            const gx = offsetX + gBbox.x;
+            const gy = offsetY + gBbox.y;
+            minX = Math.min(minX, gx);
+            minY = Math.min(minY, gy);
+            maxX = Math.max(maxX, gx + gBbox.width);
+            maxY = Math.max(maxY, gy + gBbox.height);
+          }
+        }
+      }
+    } catch (e) {
+      // Fallback to getBoundingClientRect if getBBox fails
+      const rect = wrapper.getBoundingClientRect();
+      const x = (rect.left - boardRect.left) / state.scale;
+      const y = (rect.top - boardRect.top) / state.scale;
+      const w = rect.width / state.scale;
+      const h = rect.height / state.scale;
+      if (w > 0 && h > 0) {
+        hasContent = true;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
+      }
+    }
+  });
+
+  return { hasContent, minX, minY, maxX, maxY };
+}
+
+// Fit the view to all content on the canvas
+function refitToContent() {
+  const bounds = calculateContentBounds();
+  if (!bounds.hasContent) return;
+
+  const padding = 40; // pixels of padding around content
+  const contentWidth = bounds.maxX - bounds.minX;
+  const contentHeight = bounds.maxY - bounds.minY;
+  
+  const wrap = board.parentElement;
+  const viewportWidth = wrap.clientWidth;
+  const viewportHeight = wrap.clientHeight;
+  
+  // Calculate scale to fit content with padding
+  const scaleX = (viewportWidth - padding * 2) / contentWidth;
+  const scaleY = (viewportHeight - padding * 2) / contentHeight;
+  const newScale = Math.min(scaleX, scaleY, 4); // clamp to max 4x
+  const finalScale = Math.max(newScale, 0.2); // clamp to min 0.2x
+  
+  setScale(finalScale);
+  
+  // Center the content in the viewport
+  const scaledContentWidth = contentWidth * finalScale;
+  const scaledContentHeight = contentHeight * finalScale;
+  const scrollLeft = (bounds.minX * finalScale) - (viewportWidth - scaledContentWidth) / 2;
+  const scrollTop = (bounds.minY * finalScale) - (viewportHeight - scaledContentHeight) / 2;
+  
+  wrap.scrollLeft = Math.max(0, scrollLeft);
+  wrap.scrollTop = Math.max(0, scrollTop);
+}
+
+// Copy board content as PNG to clipboard - simple screenshot using html2canvas
+async function copyContentAsPNG() {
+  const bounds = calculateContentBounds();
+  if (!bounds.hasContent) {
+    console.log('No content to copy');
+    return;
+  }
+
+  try {
+    const boardRect = board.getBoundingClientRect();
+    const padding = 40; // Increased padding to prevent trimming
+    
+    // Create a temporary container with the content
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0px';
+    tempContainer.style.width = Math.ceil(bounds.maxX - bounds.minX + padding * 2) + 'px';
+    tempContainer.style.height = Math.ceil(bounds.maxY - bounds.minY + padding * 2) + 'px';
+    tempContainer.style.background = 'white';
+    tempContainer.style.overflow = 'visible';
+    tempContainer.style.fontFamily = 'Inter, system-ui, Segoe UI, Roboto, Arial';
+    document.body.appendChild(tempContainer);
+
+    // Clone all strokes, images, and text that are within bounds
+    board.querySelectorAll('.stroke-wrapper, .item').forEach(element => {
+      const rect = element.getBoundingClientRect();
+      const x = (rect.left - boardRect.left) / state.scale;
+      const y = (rect.top - boardRect.top) / state.scale;
+      const w = rect.width / state.scale;
+      const h = rect.height / state.scale;
+
+      // Check if within bounds (with small tolerance for edges)
+      if (x + w >= bounds.minX - 2 && x <= bounds.maxX + 2 && y + h >= bounds.minY - 2 && y <= bounds.maxY + 2) {
+        const clone = element.cloneNode(true);
+        clone.style.position = 'absolute';
+        clone.style.left = (padding + x - bounds.minX) + 'px';
+        clone.style.top = (padding + y - bounds.minY) + 'px';
+        clone.style.margin = '0';
+        clone.style.border = 'none';
+        
+        /* Preserve original styling */
+        if (element.classList.contains('stroke-wrapper')) {
+          clone.style.transform = 'none';
+          clone.style.zIndex = 'auto';
+        } else if (element.classList.contains('item')) {
+          clone.style.transform = 'none';
+          clone.style.zIndex = 'auto';
+        }
+        
+        tempContainer.appendChild(clone);
+      }
+    });
+
+    // Use html2canvas to capture
+    const canvas = await html2canvas(tempContainer, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      allowTaint: true,
+      foreignObjectRendering: false
+    });
+
+    // Clean up
+    document.body.removeChild(tempContainer);
+
+    // Copy to clipboard
+    canvas.toBlob(async (blob) => {
+      try {
+        const item = new ClipboardItem({ 'image/png': blob });
+        await navigator.clipboard.write([item]);
+        console.log('Screenshot copied');
+      } catch (err) {
+        console.error('Copy error:', err);
+      }
+    }, 'image/png');
+
+  } catch (err) {
+    console.error('Error:', err);
+  }
+}
+
+if(zoomResetBtn) zoomResetBtn.addEventListener('click', refitToContent);
+if(copyPngBtn) copyPngBtn.addEventListener('click', copyContentAsPNG);
 
 // Ctrl + mouse wheel zoom. Attach to board's scrollable wrapper so we can adjust scroll to keep cursor point stable.
 const boardWrap = board.parentElement; // .board-wrap
