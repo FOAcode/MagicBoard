@@ -212,7 +212,7 @@
     width: 100%;
     height: 100%;
   }
-  .text-item[contenteditable="true"]{outline:none;border:1px dashed rgba(0,0,0,0.08);background:#fff;}
+  .text-item:focus{outline:none;border:1px dashed rgba(0,0,0,0.08);background:#fff;}
   .handle{
     position:absolute;width:12px;height:12px;border-radius:3px;background:#fff;border:1px solid #ccc;box-shadow:0 1px 0 rgba(0,0,0,0.08);
     right:-7px;bottom:-7px;cursor:nwse-resize;display:none;
@@ -2889,6 +2889,11 @@ function calculateContentBounds() {
 
   // Check all stroke wrappers - use getBBox for accurate SVG bounds
   board.querySelectorAll('.stroke-wrapper').forEach(wrapper => {
+    // Skip empty wrappers (all strokes deleted)
+    const g = wrapper.querySelector('g');
+    const paths = g?.querySelectorAll('.stroke');
+    if (!paths || paths.length === 0) return;
+
     try {
       // Get the SVG element's bounding box
       const bbox = wrapper.getBBox?.();
@@ -2900,7 +2905,6 @@ function calculateContentBounds() {
         const offsetY = (wrapperRect.top - boardRect.top) / state.scale;
         
         // Get actual SVG dimensions
-        const g = wrapper.querySelector('g');
         if (g) {
           const gBbox = g.getBBox?.();
           if (gBbox) {
@@ -3026,6 +3030,9 @@ function trimCanvasWhitespace(canvas, marginPixels = 25) {
 
 // Copy board content as PNG to clipboard - captures only the content area dynamically sized
 async function copyContentAsPNG() {
+  // Deselect everything before copying
+  clearSelection();
+
   const bounds = calculateContentBounds();
   if (!bounds.hasContent) {
     console.log('No content to copy');
