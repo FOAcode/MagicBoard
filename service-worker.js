@@ -6,7 +6,8 @@ const FILES_TO_CACHE = [
     './index.html',
     './manifest.json',
     './icon.png',
-    './jszip.min.js'
+    './libraries/jszip.min.js',
+    './libraries/html2canvas.min.js'
 ];
 
 // Install: cache static files

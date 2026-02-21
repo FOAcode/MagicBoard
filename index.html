@@ -7,8 +7,8 @@
 <title>MagicBoard</title>
 <link rel="icon" href="./icon.png" type="image/png" />
 <link rel="manifest" href="./manifest.json" />
-<script src="jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="libraries/jszip.min.js"></script>
+<script src="libraries/html2canvas.min.js"></script>
 <style>
   :root{
     --toolbar-h: 38px;
@@ -2895,30 +2895,20 @@ function calculateContentBounds() {
     if (!paths || paths.length === 0) return;
 
     try {
-      // Get the SVG element's bounding box
-      const bbox = wrapper.getBBox?.();
-      if (bbox && (bbox.width > 0 || bbox.height > 0)) {
+      const rect = g.getBoundingClientRect();
+      const x = (rect.left - boardRect.left) / state.scale;
+      const y = (rect.top - boardRect.top) / state.scale;
+      const w = rect.width / state.scale;
+      const h = rect.height / state.scale;
+      if (w > 0 || h > 0) {
         hasContent = true;
-        // Account for the wrapper's position and the inner SVG's viewBox
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const offsetX = (wrapperRect.left - boardRect.left) / state.scale;
-        const offsetY = (wrapperRect.top - boardRect.top) / state.scale;
-        
-        // Get actual SVG dimensions
-        if (g) {
-          const gBbox = g.getBBox?.();
-          if (gBbox) {
-            const gx = offsetX + gBbox.x;
-            const gy = offsetY + gBbox.y;
-            minX = Math.min(minX, gx);
-            minY = Math.min(minY, gy);
-            maxX = Math.max(maxX, gx + gBbox.width);
-            maxY = Math.max(maxY, gy + gBbox.height);
-          }
-        }
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + w);
+        maxY = Math.max(maxY, y + h);
       }
     } catch (e) {
-      // Fallback to getBoundingClientRect if getBBox fails
+      // Fallback for safety, though getBoundingClientRect is reliable
       const rect = wrapper.getBoundingClientRect();
       const x = (rect.left - boardRect.left) / state.scale;
       const y = (rect.top - boardRect.top) / state.scale;

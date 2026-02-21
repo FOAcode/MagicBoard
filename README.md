@@ -47,6 +47,7 @@ Get a copy of the repository:
 | `T` | Text Tool |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` | Redo |
+| `Ctrl` + `F` | Refit Image |
 | `Delete` / `Backspace` | Delete Selected Item |
 | `Ctrl` + `Scroll` | Zoom In/Out |
 | `Shift` (while drawing) | Draw Straight Connected Lines |
@@ -57,7 +58,7 @@ Get a copy of the repository:
 
 *   **Core**: HTML5, CSS3, Vanilla JavaScript (ES6+).
 *   **Rendering**: SVG for strokes, DOM elements for text/images.
-*   **Dependencies**: JSZip (for file export/import).
+*   **Dependencies**: JSZip (for file export/import), html2canvas (for image export).
 
 ## 📄 License
 
