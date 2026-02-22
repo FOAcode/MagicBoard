@@ -534,6 +534,15 @@
             <line id="guide-h" stroke="#ccc" stroke-width="1" stroke-dasharray="4 2" x1="-10000" x2="10000" />
             <line id="guide-v" stroke="#ccc" stroke-width="1" stroke-dasharray="4 2" y1="-10000" y2="10000" />
           </g>
+          <g id="custom-cursor" style="display: none;">
+            <g id="cursor-crosshair" opacity="0.5">
+              <line stroke-width="1" x1="8" x2="20" y1="0" y2="0" />
+              <line stroke-width="1" x1="-8" x2="-20" y1="0" y2="0" />
+              <line stroke-width="1" x1="0" x2="0" y1="8" y2="20" />
+              <line stroke-width="1" x1="0" x2="0" y1="-8" y2="-20" />
+            </g>
+            <circle id="cursor-circle" r="5" fill="#000" opacity="0.7" />
+          </g>
         </svg>
       </div>
     </div>
@@ -671,6 +680,10 @@ window.addEventListener('pointermove', e => {
     guideH.setAttribute('y2', pt.y);
     guideV.setAttribute('x1', pt.x);
     guideV.setAttribute('x2', pt.x);
+  }
+  const customCursor = el('#custom-cursor');
+  if (customCursor) {
+    customCursor.setAttribute('transform', `translate(${pt.x}, ${pt.y})`);
   }
 });
 
@@ -1071,66 +1084,431 @@ function redo(){
 
 
 function setTool(t){
+
+
   if (state.tool === 'draw' && t !== 'draw') {
+
+
     finalizeStrokeGroup();
+
+
   }
+
+
   
+
+
   // Check if any images are selected before changing tool
+
+
   const hasSelectedImages = Array.from(state.selectedIds).some(id => {
+
+
     const node = findNodeById(id);
+
+
     return node && node.dataset.type === 'image';
-  });
-  
-  state.tool = t;
-  
-  TOOL_BTN.forEach(b => {
-    if (!b.closest('.tool-btn-group')) {
-      b.classList.toggle('active', b.dataset.tool === t);
-    }
+
+
   });
 
+
+  
+
+
+  state.tool = t;
+
+
+  
+
+
+  TOOL_BTN.forEach(b => {
+
+
+    if (!b.closest('.tool-btn-group')) {
+
+
+      b.classList.toggle('active', b.dataset.tool === t);
+
+
+    }
+
+
+  });
+
+
+
+
+
   const drawGroup = el('#draw-tool-group');
+
+
   if (t === 'draw' || t === 'stroke-settings') {
+
+
     drawGroup.classList.add('active');
+
+
   } else {
+
+
     drawGroup.classList.remove('active');
+
+
   }
+
+
   
+
+
   const textGroup = el('#text-tool-group');
+
+
   if (t === 'text' || t === 'text-settings') {
+
+
     textGroup.classList.add('active');
+
+
   } else {
+
+
     textGroup.classList.remove('active');
+
+
   }
+
+
   
+
+
   if (t === 'select') {
+
+
     svg.style.pointerEvents = 'auto'; // SVG is needed for lasso
+
+
   } else {
+
+
     svg.style.pointerEvents = 'auto'; // Also needed for drawing
+
+
   }
+
+
   
-  if(t === 'draw') board.style.cursor = 'crosshair';
-  else if(t === 'text') board.style.cursor = 'text';
-  else board.style.cursor = 'default';
+
+
+  const customCursor = el('#custom-cursor');
+
+
+  if(t === 'draw') {
+
+
+    board.style.cursor = 'none';
+
+
+    if (customCursor) customCursor.style.display = 'block';
+
+
+    if (toolbarStroke) {
+
+
+        toolbarStroke.style.display = 'flex';
+
+
+        setTimeout(() => { try { updateToolbarStrokeUI(); } catch (e) { } }, 0);
+
+
+    }
+
+
+    updateCustomCursor();
+
+
+  } else {
+
+
+    if (customCursor) customCursor.style.display = 'none';
+
+
+    if(t === 'text') {
+
+
+      board.style.cursor = 'text';
+
+
+    } else {
+
+
+      board.style.cursor = 'default';
+
+
+    }
+
+
+    if (toolbarStroke) toolbarStroke.style.display = 'none';
+
+
+  }
+
+
   
-  // Keep transparency slider visible if images are selected
-  const transparencyDiv = el('#image-transparency');
-  if (hasSelectedImages) {
-    transparencyDiv.style.display = 'flex';
-  }
-  // Show/hide stroke toolbar when draw tool is active
-  const toolbarStroke = el('#stroke-toolbar');
-  if (toolbarStroke) {
-    toolbarStroke.style.display = (t === 'draw') ? 'flex' : 'none';
-    // when showing, ensure UI matches state
-    if (t === 'draw') setTimeout(()=>{ try{ updateToolbarStrokeUI(); }catch(e){} }, 0);
-  }
+
+
   // Show/hide text toolbar when text tool is active
+
+
   const toolbarText = el('#text-toolbar');
+
+
   if (toolbarText) {
+
+
     toolbarText.style.display = (t === 'text') ? 'flex' : 'none';
+
+
     if (t === 'text') setTimeout(()=>{ try{ updateToolbarTextUI(); }catch(e){} }, 0);
+
+
   }
+
+
+}
+
+
+
+
+
+function updateCustomCursor() {
+
+
+
+
+
+  const customCursor = el('#custom-cursor');
+
+
+
+
+
+  if (!customCursor) return;
+
+
+
+
+
+
+
+
+
+
+
+  const circle = el('#cursor-circle', customCursor);
+
+
+
+
+
+  const crosshair = el('#cursor-crosshair', customCursor);
+
+
+
+
+
+
+
+
+
+
+
+  if (!circle || !crosshair) return;
+
+
+
+
+
+
+
+
+
+
+
+  const radius = state.stroke.width / 2;
+
+
+
+
+
+  const safeRadius = Math.max(1, radius);
+
+
+
+
+
+  const color = state.stroke.color;
+
+
+
+
+
+  const gap = safeRadius + 4; // 4px padding from circle edge
+
+
+
+
+
+  const length = gap + 12;    // 12px long dash
+
+
+
+
+
+
+
+
+
+
+
+  // Update circle
+
+
+
+
+
+  circle.setAttribute('r', safeRadius);
+
+
+
+
+
+  circle.setAttribute('fill', color);
+
+
+
+
+
+  
+
+
+
+
+
+  // Update crosshair lines
+
+
+
+
+
+  const lines = crosshair.querySelectorAll('line');
+
+
+
+
+
+  if (lines.length === 4) {
+
+
+
+
+
+    // Right
+
+
+
+
+
+    lines[0].setAttribute('x1', gap);
+
+
+
+
+
+    lines[0].setAttribute('x2', length);
+
+
+
+
+
+    // Left
+
+
+
+
+
+    lines[1].setAttribute('x1', -gap);
+
+
+
+
+
+    lines[1].setAttribute('x2', -length);
+
+
+
+
+
+    // Bottom
+
+
+
+
+
+    lines[2].setAttribute('y1', gap);
+
+
+
+
+
+    lines[2].setAttribute('y2', length);
+
+
+
+
+
+    // Top
+
+
+
+
+
+    lines[3].setAttribute('y1', -gap);
+
+
+
+
+
+    lines[3].setAttribute('y2', -length);
+
+
+
+
+
+    
+
+
+
+
+
+    // Update color for all lines
+
+
+
+
+
+    lines.forEach(line => line.setAttribute('stroke', color));
+
+
+
+
+
+  }
+
+
+
+
+
 }
 
 /* Element creation */
@@ -2102,11 +2480,23 @@ function onBoardPointerDown(e) {
         };
       }
     } else {
+      // Free-hand drawing
       if (straightLineState) finalizeStrokeGroup();
       straightLineState = null;
       drawing = true;
       board.setPointerCapture?.(e.pointerId);
+      
+      // Temporarily disable arrows for free-hand
+      const wasStartArrow = state.stroke.startArrow;
+      const wasEndArrow = state.stroke.endArrow;
+      state.stroke.startArrow = false;
+      state.stroke.endArrow = false;
+
       currentPath = startStroke(x, y);
+
+      // Restore arrow settings
+      state.stroke.startArrow = wasStartArrow;
+      state.stroke.endArrow = wasEndArrow;
     }
   }
 
@@ -2345,6 +2735,7 @@ function onBoardPointerUp(e){
       }
     } else {
       if (currentPath) addPointToPath(currentPath, x, y);
+      finalizeStrokeGroup();
       currentPath = null; 
     }
   }
@@ -3278,6 +3669,7 @@ if(toolbarStrokeSlider){
     // keep popup in sync
     strokeWidthInput.value = v;
     strokeWidthLabel.innerText = v.toFixed(1);
+    updateCustomCursor();
   });
   toolbarStrokeSlider.addEventListener('change', (e)=>{
     // MODIFICATION: Removed history tracking from tool setting
@@ -3297,6 +3689,7 @@ if(quickStrokeColors){
       // mark active
       quickStrokeColors.querySelectorAll('button').forEach(x=> x.classList.remove('active'));
       b.classList.add('active');
+      updateCustomCursor();
       // MODIFICATION: Removed history tracking from tool setting
       // pushHistory();
     });
@@ -3324,7 +3717,7 @@ if (quickEndArrow) {
 }
 
 // Keep popup inputs in sync with toolbar changes
-strokeColorInput.addEventListener('input', (e) => { state.stroke.color = e.target.value; updateToolbarStrokeUI(); });
+strokeColorInput.addEventListener('input', (e) => { state.stroke.color = e.target.value; updateToolbarStrokeUI(); updateCustomCursor(); });
 if(strokeWidthInput){
   // MODIFICATION: Removed history tracking from tool setting
   // strokeWidthInput.addEventListener('pointerdown', ()=>{ startSliderHistory(); });
@@ -3333,6 +3726,7 @@ if(strokeWidthInput){
     state.stroke.width = width;
     strokeWidthLabel.innerText = width.toFixed(1);
     updateToolbarStrokeUI();
+    updateCustomCursor();
   });
   // MODIFICATION: Removed history tracking from tool setting
   // strokeWidthInput.addEventListener('change', ()=> endSliderHistory());
