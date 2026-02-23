@@ -535,13 +535,15 @@
             <line id="guide-v" stroke="#ccc" stroke-width="1" stroke-dasharray="4 2" y1="-10000" y2="10000" />
           </g>
           <g id="custom-cursor" style="display: none;">
-            <g id="cursor-crosshair" opacity="0.5">
-              <line stroke-width="1" x1="8" x2="20" y1="0" y2="0" />
-              <line stroke-width="1" x1="-8" x2="-20" y1="0" y2="0" />
-              <line stroke-width="1" x1="0" x2="0" y1="8" y2="20" />
-              <line stroke-width="1" x1="0" x2="0" y1="-8" y2="-20" />
+            <!-- This group is counter-scaled to make its contents appear fixed-size on screen -->
+            <g id="cursor-fixed-size-group">
+                <line x1="4" y1="0" x2="14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
+                <line x1="-4" y1="0" x2="-14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
+                <line x1="0" y1="4" x2="0" y2="14" stroke-width="1" stroke-dasharray="4 2"/>
+                <line x1="0" y1="-4" x2="0" y2="-14" stroke-width="1" stroke-dasharray="4 2"/>
             </g>
-            <circle id="cursor-circle" r="5" fill="#000" opacity="0.7" />
+            <!-- This circle scales with the brush size -->
+            <circle id="cursor-brush-size" r="4" fill="rgba(0,0,0,0.5)" />
           </g>
         </svg>
       </div>
@@ -1282,233 +1284,30 @@ function setTool(t){
 
 
 function updateCustomCursor() {
-
-
-
-
-
-  const customCursor = el('#custom-cursor');
-
-
-
-
-
+  const customCursor = document.getElementById('custom-cursor');
   if (!customCursor) return;
 
+  const brushCircle = document.getElementById('cursor-brush-size');
+  const fixedGroup = document.getElementById('cursor-fixed-size-group');
 
+  if (!brushCircle || !fixedGroup) return;
 
+  const brushRadius = state.stroke.width / 2;
+  const color = state.stroke.color || '#000';
 
+  // 1. Update the brush size circle (this exists in the "world" space, so it scales with zoom)
+  brushCircle.setAttribute('r', Math.max(0.5, brushRadius));
+  brushCircle.setAttribute('fill', color);
+  brushCircle.style.opacity = 0.5;
 
-
-
-
-
-
-
-  const circle = el('#cursor-circle', customCursor);
-
-
-
-
-
-  const crosshair = el('#cursor-crosshair', customCursor);
-
-
-
-
-
-
-
-
-
-
-
-  if (!circle || !crosshair) return;
-
-
-
-
-
-
-
-
-
-
-
-  const radius = state.stroke.width / 2;
-
-
-
-
-
-  const safeRadius = Math.max(1, radius);
-
-
-
-
-
-  const color = state.stroke.color;
-
-
-
-
-
-  const gap = safeRadius + 4; // 4px padding from circle edge
-
-
-
-
-
-  const length = gap + 12;    // 12px long dash
-
-
-
-
-
-
-
-
-
-
-
-  // Update circle
-
-
-
-
-
-  circle.setAttribute('r', safeRadius);
-
-
-
-
-
-  circle.setAttribute('fill', color);
-
-
-
-
-
+  // 2. Counter-scale the fixed-size group to keep it constant on screen
+  const inverseScale = 1 / state.scale;
+  fixedGroup.setAttribute('transform', `scale(${inverseScale})`);
   
-
-
-
-
-
-  // Update crosshair lines
-
-
-
-
-
-  const lines = crosshair.querySelectorAll('line');
-
-
-
-
-
-  if (lines.length === 4) {
-
-
-
-
-
-    // Right
-
-
-
-
-
-    lines[0].setAttribute('x1', gap);
-
-
-
-
-
-    lines[0].setAttribute('x2', length);
-
-
-
-
-
-    // Left
-
-
-
-
-
-    lines[1].setAttribute('x1', -gap);
-
-
-
-
-
-    lines[1].setAttribute('x2', -length);
-
-
-
-
-
-    // Bottom
-
-
-
-
-
-    lines[2].setAttribute('y1', gap);
-
-
-
-
-
-    lines[2].setAttribute('y2', length);
-
-
-
-
-
-    // Top
-
-
-
-
-
-    lines[3].setAttribute('y1', -gap);
-
-
-
-
-
-    lines[3].setAttribute('y2', -length);
-
-
-
-
-
-    
-
-
-
-
-
-    // Update color for all lines
-
-
-
-
-
-    lines.forEach(line => line.setAttribute('stroke', color));
-
-
-
-
-
-  }
-
-
-
-
-
+  // 3. Style the fixed parts (their geometry is static in the SVG)
+  fixedGroup.querySelectorAll('line').forEach(el => {
+    el.setAttribute('stroke', color);
+  });
 }
 
 /* Element creation */
@@ -3261,6 +3060,7 @@ function setScale(newScale){
   const clamped = Math.min(4, Math.max(0.2, parseFloat(newScale.toFixed(2))));
   state.scale = clamped;
   applyScale();
+  updateCustomCursor();
 }
 
 const zoomResetBtn = el('#zoom-reset');
