@@ -535,12 +535,22 @@
             <line id="guide-v" stroke="#ccc" stroke-width="1" stroke-dasharray="4 2" y1="-10000" y2="10000" />
           </g>
           <g id="custom-cursor" style="display: none;">
-            <!-- This group is counter-scaled to make its contents appear fixed-size on screen -->
+            <!-- This group is counter-scaled to keep it fixed-size on screen -->
             <g id="cursor-fixed-size-group">
-                <line x1="4" y1="0" x2="14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
-                <line x1="-4" y1="0" x2="-14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
-                <line x1="0" y1="4" x2="0" y2="14" stroke-width="1" stroke-dasharray="4 2"/>
-                <line x1="0" y1="-4" x2="0" y2="-14" stroke-width="1" stroke-dasharray="4 2"/>
+                <!-- Black crosshair for light backgrounds -->
+                <g stroke="black">
+                    <line x1="4" y1="0" x2="14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
+                    <line x1="-4" y1="0" x2="-14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
+                    <line x1="0" y1="4" x2="0" y2="14" stroke-width="1" stroke-dasharray="4 2"/>
+                    <line x1="0" y1="-4" x2="0" y2="-14" stroke-width="1" stroke-dasharray="4 2"/>
+                </g>
+                <!-- White blending crosshair for dark backgrounds -->
+                <g stroke="white" style="mix-blend-mode: difference;">
+                    <line x1="4" y1="0" x2="14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
+                    <line x1="-4" y1="0" x2="-14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
+                    <line x1="0" y1="4" x2="0" y2="14" stroke-width="1" stroke-dasharray="4 2"/>
+                    <line x1="0" y1="-4" x2="0" y2="-14" stroke-width="1" stroke-dasharray="4 2"/>
+                </g>
             </g>
             <!-- This circle scales with the brush size -->
             <circle id="cursor-brush-size" r="4" fill="rgba(0,0,0,0.5)" />
@@ -1295,19 +1305,16 @@ function updateCustomCursor() {
   const brushRadius = state.stroke.width / 2;
   const color = state.stroke.color || '#000';
 
-  // 1. Update the brush size circle (this exists in the "world" space, so it scales with zoom)
+  // 1. Update the brush size circle
   brushCircle.setAttribute('r', Math.max(0.5, brushRadius));
   brushCircle.setAttribute('fill', color);
   brushCircle.style.opacity = 0.5;
 
-  // 2. Counter-scale the fixed-size group to keep it constant on screen
+  // 2. Counter-scale the fixed-size group
   const inverseScale = 1 / state.scale;
   fixedGroup.setAttribute('transform', `scale(${inverseScale})`);
   
-  // 3. Style the fixed parts (their geometry is static in the SVG)
-  fixedGroup.querySelectorAll('line').forEach(el => {
-    el.setAttribute('stroke', color);
-  });
+  // The crosshair colors are static now, so no need to style them here.
 }
 
 /* Element creation */
@@ -1453,7 +1460,7 @@ function startStroke(x, y) {
   path.dataset.type = 'stroke';
   path.dataset.id = id('stroke');
   path.points = [{x, y}];
-  path.setAttribute('d', `M ${x} ${y}`);
+  path.setAttribute('d', `M ${x - 0.01} ${y} L ${x + 0.01} ${y}`);
   path.setAttribute('stroke', state.stroke.color);
   path.setAttribute('stroke-width', state.stroke.width);
 
