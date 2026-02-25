@@ -2977,6 +2977,7 @@ async function importWhiteboard(file){
         }
 
         g.dataset.type = 'stroke-group-g'; 
+        // The transform is now baked into the path data on export, so we don't need to apply it here.
         // Only set transform if it's a non-empty string and not "null"
         if (it.transform && it.transform !== 'null' && typeof it.transform === 'string' && it.transform.trim()) {
           g.setAttribute('transform', it.transform);
