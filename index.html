@@ -537,19 +537,19 @@
           <g id="custom-cursor" style="display: none;">
             <!-- This group is counter-scaled to keep it fixed-size on screen -->
             <g id="cursor-fixed-size-group">
-                <!-- Black crosshair for light backgrounds -->
-                <g stroke="black">
-                    <line x1="4" y1="0" x2="14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
-                    <line x1="-4" y1="0" x2="-14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
-                    <line x1="0" y1="4" x2="0" y2="14" stroke-width="1" stroke-dasharray="4 2"/>
-                    <line x1="0" y1="-4" x2="0" y2="-14" stroke-width="1" stroke-dasharray="4 2"/>
+                <!-- White outline for contrast -->
+                <g stroke-width="3" stroke-linecap="round" stroke="white">
+                    <line x1="4" y1="0" x2="14" y2="0"/>
+                    <line x1="-4" y1="0" x2="-14" y2="0"/>
+                    <line x1="0" y1="4" x2="0" y2="14"/>
+                    <line x1="0" y1="-4" x2="0" y2="-14"/>
                 </g>
-                <!-- White blending crosshair for dark backgrounds -->
-                <g stroke="white" style="mix-blend-mode: difference;">
-                    <line x1="4" y1="0" x2="14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
-                    <line x1="-4" y1="0" x2="-14" y2="0" stroke-width="1" stroke-dasharray="4 2"/>
-                    <line x1="0" y1="4" x2="0" y2="14" stroke-width="1" stroke-dasharray="4 2"/>
-                    <line x1="0" y1="-4" x2="0" y2="-14" stroke-width="1" stroke-dasharray="4 2"/>
+                <!-- Inner black crosshair -->
+                <g stroke-width="1" stroke-linecap="round" stroke="black">
+                    <line x1="4" y1="0" x2="14" y2="0"/>
+                    <line x1="-4" y1="0" x2="-14" y2="0"/>
+                    <line x1="0" y1="4" x2="0" y2="14"/>
+                    <line x1="0" y1="-4" x2="0" y2="-14"/>
                 </g>
             </g>
             <!-- This circle scales with the brush size -->
