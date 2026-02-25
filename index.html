@@ -3062,6 +3062,15 @@ function applyScale(){
     board.style.minWidth = (minW) + 'px';
     board.style.minHeight = (minH) + 'px';
   }
+
+  // --- NEW: Update guides to counteract scaling ---
+  const inverseScale = 1 / state.scale;
+  if (guideH && guideV) {
+    guideH.setAttribute('stroke-width', inverseScale);
+    guideV.setAttribute('stroke-width', inverseScale);
+    guideH.setAttribute('stroke-dasharray', `${4 * inverseScale} ${2 * inverseScale}`);
+    guideV.setAttribute('stroke-dasharray', `${4 * inverseScale} ${2 * inverseScale}`);
+  }
 }
 
 function setScale(newScale){
