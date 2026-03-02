@@ -3282,7 +3282,7 @@ async function copyContentAsPNG() {
     const originalScrollLeft = wrap.scrollLeft;
     const originalScrollTop = wrap.scrollTop;
 
-    // Set a scale that fits the content nicely (but not mandatory - use original scale if better)
+    // Set a scale that fits the content nicely
     setScale(1); // Use 1:1 scale for crisp capture
 
     // Wait a moment for the scale to apply
@@ -3297,40 +3297,48 @@ async function copyContentAsPNG() {
 
     console.log(`Capturing content: ${contentWidth}x${contentHeight} at (${contentX}, ${contentY})`);
 
-    // Create a canvas element sized to the exact content bounds
-    const tempCanvas = document.createElement('div');
-    tempCanvas.style.position = 'absolute';
-    tempCanvas.style.left = '-9999px';
-    tempCanvas.style.top = '0';
-    tempCanvas.style.width = contentWidth + 'px';
-    tempCanvas.style.height = contentHeight + 'px';
-    tempCanvas.style.overflow = 'hidden';
-    tempCanvas.style.background = 'white';
+    // Create a container for the screenshot
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.width = contentWidth + 'px';
+    tempContainer.style.height = contentHeight + 'px';
+    tempContainer.style.overflow = 'hidden';
+    tempContainer.style.background = 'white';
     
-    // Clone the board and position it to show only the content area
+    // Clone the board with all its content
     const boardClone = board.cloneNode(true);
     boardClone.style.position = 'absolute';
-    boardClone.style.top = (-contentY / state.scale) + 'px';
-    boardClone.style.left = (-contentX / state.scale) + 'px';
-    boardClone.style.transform = `scale(${state.scale})`;
-    boardClone.style.transformOrigin = '0 0';
+    boardClone.style.margin = '0';
+    boardClone.style.padding = '0';
+    boardClone.style.transform = 'none';
+    boardClone.style.transformOrigin = 'none';
+    boardClone.style.zoom = '1';
+    
+    // Position the cloned board to show the content area
+    const offsetX = -contentX;
+    const offsetY = -contentY;
+    boardClone.style.top = offsetY + 'px';
+    boardClone.style.left = offsetX + 'px';
     boardClone.style.width = board.offsetWidth + 'px';
     boardClone.style.height = board.offsetHeight + 'px';
     
-    tempCanvas.appendChild(boardClone);
-    document.body.appendChild(tempCanvas);
+    tempContainer.appendChild(boardClone);
+    document.body.appendChild(tempContainer);
 
     // Capture with html2canvas
-    let canvas = await html2canvas(tempCanvas, {
+    let canvas = await html2canvas(tempContainer, {
       scale: 2,
       backgroundColor: '#ffffff',
       useCORS: true,
       allowTaint: true,
-      foreignObjectRendering: false
+      foreignObjectRendering: false,
+      logging: false
     });
 
     // Clean up
-    document.body.removeChild(tempCanvas);
+    document.body.removeChild(tempContainer);
 
     // Restore original scale and scroll
     setScale(originalScale);
