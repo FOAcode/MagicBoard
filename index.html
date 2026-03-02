@@ -1327,6 +1327,23 @@ function updateCustomCursorPosition() {
   customCursor.setAttribute('transform', `translate(${pt.x}, ${pt.y})`);
 }
 
+function updateGuidelinesAndCursor() {
+  if (!lastMouseEvent) return;
+  
+  const pt = getBoardPointFromEvent(lastMouseEvent);
+  
+  // Update guides
+  if (guideH && guideV) {
+    guideH.setAttribute('y1', pt.y);
+    guideH.setAttribute('y2', pt.y);
+    guideV.setAttribute('x1', pt.x);
+    guideV.setAttribute('x2', pt.x);
+  }
+  
+  // Update custom cursor
+  updateCustomCursorPosition();
+}
+
 /* Element creation */
 // --- MODIFIED: Added options parameter for import ---
 function createImageItem(src, x=80, y=80, w=240, options = {}){
@@ -3381,9 +3398,9 @@ boardWrap.addEventListener('wheel', (e)=>{
   boardWrap.scrollLeft += dx;
   boardWrap.scrollTop += dy;
   
-  // Update cursor position after layout updates via requestAnimationFrame
+  // Update cursor and guides position after layout updates via requestAnimationFrame
   requestAnimationFrame(() => {
-    updateCustomCursorPosition();
+    updateGuidelinesAndCursor();
   });
 });
 
@@ -3457,6 +3474,13 @@ boardWrap.addEventListener('pointerleave', (e) => {
   }
   board.style.cursor = 'default';
 });
+
+// Update cursor position when scrolling (includes wheel, shift+wheel, and middle-click pan)
+boardWrap.addEventListener('scroll', (e) => {
+  requestAnimationFrame(() => {
+    updateGuidelinesAndCursor();
+  });
+}, { passive: true });
 
 // --- Stroke Popup Wiring ---
 const strokePopup = el('#stroke-popup');
