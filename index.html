@@ -156,12 +156,14 @@
   .app{
     display:flex;flex:1;overflow:hidden;height:calc(100vh - var(--toolbar-h));
   }
-  .board-wrap{flex:1;position:relative;display:flex;flex-direction:column;}
-  /* allow panning when zoomed */
-  .board-wrap { overflow: auto; }
+  .board-wrap{flex:1;position:relative;display:flex;flex-direction:column;overflow:auto;-ms-overflow-style:none;scrollbar-width:none;}
+  /* Hide scrollbars while keeping scroll functionality */
+  .board-wrap::-webkit-scrollbar { display: none; }
   .board{
     position:relative;flex:1;margin:6px;background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;overflow:hidden;
     box-shadow:0 4px 14px rgba(2,6,23,0.06);border:1px solid #e9eef6;
+    width: 100%; height: 100%;
+    max-width:1920px;max-height:1080px;
     outline: none;
     user-select: none;
   }
@@ -2624,6 +2626,9 @@ window.addEventListener('paste', (ev)=>{
 /* Attach item behaviors */
 function attachItemBehaviors(node){
   node.addEventListener('pointerdown', (e)=>{
+    // Only handle left mouse button (button 0) for selection
+    if (e.button !== 0) return;
+    
     // If we're in draw mode, don't let item handlers run (prevents selection)
     if (state.tool === 'draw') {
       // Let the board handle drawing — but prevent native focus/drag side-effects
@@ -3337,6 +3342,12 @@ if(copyPngBtn) copyPngBtn.addEventListener('click', copyContentAsPNG);
 
 // Ctrl + mouse wheel zoom. Attach to board's scrollable wrapper so we can adjust scroll to keep cursor point stable.
 const boardWrap = board.parentElement; // .board-wrap
+let isPanning = false;
+let panStartX = 0;
+let panStartY = 0;
+let panStartScrollX = 0;
+let panStartScrollY = 0;
+
 boardWrap.addEventListener('wheel', (e)=>{
   if (!e.ctrlKey) return; // only when Ctrl is pressed
   e.preventDefault();
@@ -3356,12 +3367,51 @@ boardWrap.addEventListener('wheel', (e)=>{
   setScale(rawNewScale);
   const newScale = state.scale;
 
-  // Adjust scroll to keep the point (bx, by) stationary relative to the viewport
+  // Adjust scroll synchronously to keep the point (bx, by) stationary
   const dx = bx * (newScale - oldScale);
   const dy = by * (newScale - oldScale);
-
   boardWrap.scrollLeft += dx;
   boardWrap.scrollTop += dy;
+});
+
+// Middle mouse button (button 1) panning - use capture phase to intercept before item handlers
+boardWrap.addEventListener('pointerdown', (e) => {
+  if (e.button === 1) { // middle mouse button
+    e.preventDefault();
+    e.stopPropagation();
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartScrollX = boardWrap.scrollLeft;
+    panStartScrollY = boardWrap.scrollTop;
+    boardWrap.style.cursor = 'grabbing';
+    // Deactivate selection during panning
+    clearSelection();
+  }
+}, true); // capture phase
+
+boardWrap.addEventListener('pointermove', (e) => {
+  if (!isPanning) return;
+  
+  const dx = e.clientX - panStartX;
+  const dy = e.clientY - panStartY;
+  
+  boardWrap.scrollLeft = panStartScrollX - dx;
+  boardWrap.scrollTop = panStartScrollY - dy;
+});
+
+boardWrap.addEventListener('pointerup', (e) => {
+  if (isPanning) {
+    isPanning = false;
+    boardWrap.style.cursor = 'default';
+  }
+});
+
+boardWrap.addEventListener('pointerleave', (e) => {
+  if (isPanning && e.button === 1) {
+    isPanning = false;
+    boardWrap.style.cursor = 'default';
+  }
 });
 
 // --- Stroke Popup Wiring ---
