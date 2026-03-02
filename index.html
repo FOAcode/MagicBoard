@@ -695,10 +695,8 @@ window.addEventListener('pointermove', e => {
     guideV.setAttribute('x1', pt.x);
     guideV.setAttribute('x2', pt.x);
   }
-  const customCursor = el('#custom-cursor');
-  if (customCursor) {
-    customCursor.setAttribute('transform', `translate(${pt.x}, ${pt.y})`);
-  }
+  // Update cursor position immediately when in draw mode
+  updateCustomCursorPosition();
 });
 
 // --- MODIFIED: Unified z-index system ---
@@ -1316,7 +1314,17 @@ function updateCustomCursor() {
   const inverseScale = 1 / state.scale;
   fixedGroup.setAttribute('transform', `scale(${inverseScale})`);
   
-  // The crosshair colors are static now, so no need to style them here.
+  // 3. Update cursor position based on last mouse position
+  updateCustomCursorPosition();
+}
+
+function updateCustomCursorPosition() {
+  if (!lastMouseEvent) return;
+  const customCursor = document.getElementById('custom-cursor');
+  if (!customCursor || customCursor.style.display === 'none' || isPanning) return;
+  
+  const pt = getBoardPointFromEvent(lastMouseEvent);
+  customCursor.setAttribute('transform', `translate(${pt.x}, ${pt.y})`);
 }
 
 /* Element creation */
@@ -3372,6 +3380,24 @@ boardWrap.addEventListener('wheel', (e)=>{
   const dy = by * (newScale - oldScale);
   boardWrap.scrollLeft += dx;
   boardWrap.scrollTop += dy;
+  
+  // Update cursor position after layout updates via requestAnimationFrame
+  requestAnimationFrame(() => {
+    updateCustomCursorPosition();
+  });
+});
+
+boardWrap.addEventListener('pointerenter', (e) => {
+  if (!isPanning) {
+    // Set cursor based on current tool
+    if (state.tool === 'draw') {
+      board.style.cursor = 'none';
+    } else if (state.tool === 'text') {
+      board.style.cursor = 'text';
+    } else {
+      board.style.cursor = 'default';
+    }
+  }
 });
 
 // Middle mouse button (button 1) panning - use capture phase to intercept before item handlers
@@ -3384,7 +3410,15 @@ boardWrap.addEventListener('pointerdown', (e) => {
     panStartY = e.clientY;
     panStartScrollX = boardWrap.scrollLeft;
     panStartScrollY = boardWrap.scrollTop;
-    boardWrap.style.cursor = 'grabbing';
+    // Show grabbing cursor by setting it on board element
+    if (state.tool === 'draw') {
+      board.style.cursor = 'grabbing';
+      // Hide custom draw cursor during panning
+      const customCursor = el('#custom-cursor');
+      if (customCursor) customCursor.style.display = 'none';
+    } else {
+      board.style.cursor = 'grabbing';
+    }
     // Deactivate selection during panning
     clearSelection();
   }
@@ -3403,15 +3437,25 @@ boardWrap.addEventListener('pointermove', (e) => {
 boardWrap.addEventListener('pointerup', (e) => {
   if (isPanning) {
     isPanning = false;
-    boardWrap.style.cursor = 'default';
+    // Restore appropriate cursor based on tool
+    if (state.tool === 'draw') {
+      board.style.cursor = 'none';
+      // Show custom draw cursor again
+      const customCursor = el('#custom-cursor');
+      if (customCursor) customCursor.style.display = 'block';
+    } else if (state.tool === 'text') {
+      board.style.cursor = 'text';
+    } else {
+      board.style.cursor = 'default';
+    }
   }
 });
 
 boardWrap.addEventListener('pointerleave', (e) => {
-  if (isPanning && e.button === 1) {
+  if (isPanning) {
     isPanning = false;
-    boardWrap.style.cursor = 'default';
   }
+  board.style.cursor = 'default';
 });
 
 // --- Stroke Popup Wiring ---
