@@ -2781,6 +2781,7 @@ function changeZ(idstr, delta){
 async function exportWhiteboard(){
   const items = [];
   const imageBlobs = [];
+  const boardRect = board.getBoundingClientRect();
 
   // Collect items (images/text)
   for (const n of board.querySelectorAll('.item')) {
@@ -2794,7 +2795,6 @@ async function exportWhiteboard(){
     
     // If inline styles don't have these values, calculate from element's bounding rect relative to board
     if (isNaN(left) || isNaN(top)) {
-      const boardRect = board.getBoundingClientRect();
       const elemRect = n.getBoundingClientRect();
       if (isNaN(left)) left = (elemRect.left - boardRect.left) / state.scale;
       if (isNaN(top)) top = (elemRect.top - boardRect.top) / state.scale;
@@ -2862,8 +2862,7 @@ async function exportWhiteboard(){
     g.querySelectorAll('.stroke').forEach(p => {
       const d = p.getAttribute('d') || '';
       
-      // Store path data as-is, do NOT transform it
-      // The transform attribute will reposition it on import
+      // Store path data as-is
       paths.push({ d: d, markerStart: p.getAttribute('marker-start'), markerEnd: p.getAttribute('marker-end') });
       g_color = p.getAttribute('stroke') || g_color;
       g_width = p.getAttribute('stroke-width') || g_width;
@@ -3007,8 +3006,7 @@ async function importWhiteboard(file){
         }
 
         g.dataset.type = 'stroke-group-g'; 
-        // The transform is now baked into the path data on export, so we don't need to apply it here.
-        // Only set transform if it's a non-empty string and not "null"
+        // Restore the transform to reposition the stroke group
         if (it.transform && it.transform !== 'null' && typeof it.transform === 'string' && it.transform.trim()) {
           g.setAttribute('transform', it.transform);
         }
