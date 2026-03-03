@@ -844,10 +844,13 @@ function createSnapshot() {
 
     if (n.dataset.type === 'image') {
       const img = n.querySelector('img');
+      const w = parseFloat(width);
+      const h = parseFloat(height);
       obj.src = img?.src || '';
       obj.opacity = parseFloat(img?.style.opacity || '1');
-      obj.width = parseFloat(width);
-      obj.height = parseFloat(height);
+      // Ensure dimensions are valid (at least 20x20)
+      obj.width = Math.max(20, isNaN(w) ? 240 : w);
+      obj.height = Math.max(20, isNaN(h) ? 180 : h);
     } else if (n.dataset.type === 'text') {
       const p = n.querySelector('.text-item');
       obj.text = p?.innerText || '';
@@ -914,18 +917,45 @@ function restoreSnapshot(snapshot) {
   isRestoringHistory = true;
 
   // Clear existing items (but not board background)
-  board.querySelectorAll('.item, .stroke-wrapper').forEach(n => n.remove());
+  const existingItems = board.querySelectorAll('.item, .stroke-wrapper');
+  existingItems.forEach(n => {
+    try {
+      n.remove();
+    } catch(e) {
+      console.warn('Failed to remove item during restore:', e);
+    }
+  });
 
   // --- Restore each item
   for (const it of snapshot.items || []) {
     if (it.type === 'image') {
+      // Remove any existing image with this ID to avoid duplicates
+      const existing = board.querySelector(`.item[data-id="${it.id}"]`);
+      if (existing) {
+        try { existing.remove(); } catch(e) {}
+      }
+      
       const item = createImageItem(it.src || '', it.left ?? 80, it.top ?? 80, it.width ?? 240, {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true, opacity: it.opacity ?? 1
       });
       item.style.zIndex = it.z || 0;
+      // Pre-set width from snapshot to prevent flickering during undo/redo
+      // Height will be set by onload callback based on image aspect ratio
+      const imgWidth = Math.max(20, it.width || 240);
+      item.style.width = imgWidth + 'px';
+      // Only restore height if it exists and the image isn't loading yet
+      if (it.height && it.height > 0) {
+        item.style.height = Math.max(20, it.height) + 'px';
+      }
     }
 
     else if (it.type === 'text') {
+      // Remove any existing text item with this ID to avoid duplicates
+      const existing = board.querySelector(`.item[data-id="${it.id}"]`);
+      if (existing) {
+        try { existing.remove(); } catch(e) {}
+      }
+      
       const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
       });
@@ -947,6 +977,12 @@ function restoreSnapshot(snapshot) {
     }
 
     else if (it.type === 'stroke') {
+      // Remove any existing stroke with this ID to avoid duplicates
+      const existing = board.querySelector(`.stroke-wrapper[data-id="${it.id}"]`);
+      if (existing) {
+        try { existing.remove(); } catch(e) {}
+      }
+      
       // Create stroke wrapper and group
       const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svgWrapper.classList.add('stroke-wrapper');
@@ -1355,17 +1391,37 @@ function createImageItem(src, x=80, y=80, w=240, options = {}){
   wrapper.dataset.type = 'image';
   wrapper.style.left = x + 'px'; wrapper.style.top = y + 'px';
   wrapper.style.zIndex = state.nextZ++; // --- MODIFIED: Use unified Z ---
+  
+  // Pre-set dimensions to prevent flickering during undo/redo
+  if (w) {
+    wrapper.style.width = w + 'px';
+  }
+  
   const img = document.createElement('img');
   img.src = src;
   if (options.opacity !== undefined) {
     img.style.opacity = options.opacity;
   }
+  
+  // Track if we need to push history after image loads (to avoid intermediate states)
+  let shouldPushHistoryOnLoad = !options.skipHistory && options.deferHistory;
+  
   img.onload = ()=> {
     // Allow initial width to be the requested width (w) even if it's larger than the image's natural size
     if (!wrapper.style.width) wrapper.style.width = (w ? w : (img.naturalWidth || 240)) + 'px';
+    // Set height based on image aspect ratio if not already set
+    if (!wrapper.style.height && img.naturalHeight && img.naturalWidth) {
+      const width = parseFloat(wrapper.style.width || w || 240);
+      wrapper.style.height = (width * img.naturalHeight / img.naturalWidth) + 'px';
+    }
     if (!options.skipRefresh) refreshLayers();
     // Update pixelation indicator depending on whether the displayed size exceeds natural size
     try{ updateImagePixelation(wrapper); }catch(err){}
+    
+    // Push history after image dimensions are finalized
+    if (shouldPushHistoryOnLoad) {
+      pushHistory();
+    }
   };
   wrapper.appendChild(img);
   attachItemBehaviors(wrapper);
@@ -1374,7 +1430,7 @@ function createImageItem(src, x=80, y=80, w=240, options = {}){
   if (!options.skipSelect) selectItem(uid);
   // Toggle pixelation based on size vs natural resolution
   try{ updateImagePixelation(wrapper); }catch(e){}
-  if (!options.skipHistory) pushHistory();
+  if (!options.skipHistory && !options.deferHistory) pushHistory();
   return wrapper;
 }
 
@@ -2592,7 +2648,8 @@ board.addEventListener('drop', (e)=>{
   items.forEach(file=>{
     if(file.type.startsWith('image/')){
       const url = URL.createObjectURL(file);
-      createImageItem(url, x, y, 260);
+      // Defer history until image loads to capture final dimensions
+      createImageItem(url, x, y, 260, { deferHistory: true });
     }
   });
 });
@@ -2630,7 +2687,8 @@ window.addEventListener('paste', (ev)=>{
         y = centerY - 80;
       }
       
-      createImageItem(url, x, y, imageWidth);
+      // Defer history until image loads to capture final dimensions
+      createImageItem(url, x, y, imageWidth, { deferHistory: true });
       ev.preventDefault();
       return;
     }
