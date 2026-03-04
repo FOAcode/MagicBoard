@@ -3368,7 +3368,7 @@ async function copyContentAsPNG() {
     tempContainer.style.width = contentWidth + 'px';
     tempContainer.style.height = contentHeight + 'px';
     tempContainer.style.overflow = 'hidden';
-    tempContainer.style.background = 'white';
+    tempContainer.style.background = '#ffffff';
     
     // Clone the board with all its content
     const boardClone = board.cloneNode(true);
@@ -3378,6 +3378,7 @@ async function copyContentAsPNG() {
     boardClone.style.transform = 'none';
     boardClone.style.transformOrigin = 'none';
     boardClone.style.zoom = '1';
+    boardClone.style.background = '#ffffff';
     
     // Position the cloned board to show the content area
     const offsetX = -contentX;
@@ -3397,7 +3398,9 @@ async function copyContentAsPNG() {
       useCORS: true,
       allowTaint: true,
       foreignObjectRendering: false,
-      logging: false
+      logging: false,
+      windowHeight: contentHeight,
+      windowWidth: contentWidth
     });
 
     // Clean up
