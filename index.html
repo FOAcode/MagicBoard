@@ -2894,14 +2894,16 @@ async function exportWhiteboard(){
     if (t === 'text') {
       const p = n.querySelector('.text-item');
       obj.text = p?.innerText || '';
+      // Capture computed font size to ensure accuracy
+      const computedStyle = window.getComputedStyle(p);
       obj.style = {
-        bold: p.style.fontWeight === 'bold',
-        italic: p.style.fontStyle === 'italic',
-        underline: p.style.textDecoration === 'underline',
-        color: p.style.color,
-        backgroundColor: p.style.backgroundColor,
-        fontSize: p.style.fontSize,
-        textAlign: p.style.textAlign
+        bold: p.style.fontWeight === 'bold' || computedStyle.fontWeight === '700' || computedStyle.fontWeight === 'bold',
+        italic: p.style.fontStyle === 'italic' || computedStyle.fontStyle === 'italic',
+        underline: p.style.textDecoration.includes('underline') || computedStyle.textDecoration.includes('underline'),
+        color: p.style.color || computedStyle.color,
+        backgroundColor: p.style.backgroundColor || computedStyle.backgroundColor,
+        fontSize: p.style.fontSize || computedStyle.fontSize,
+        textAlign: p.style.textAlign || computedStyle.textAlign
       };
     }
 
@@ -3030,6 +3032,11 @@ async function importWhiteboard(file){
           if (it.style.backgroundColor) p.style.backgroundColor = it.style.backgroundColor;
           if (it.style.fontSize) p.style.fontSize = it.style.fontSize;
           if (it.style.textAlign) p.style.textAlign = it.style.textAlign;
+        }
+        // Fit text to box after all dimensions and styles are restored
+        const textElement = item.querySelector('.text-item');
+        if (textElement && (it.width || it.height)) {
+          fitTextToBox(textElement);
         }
       } else if (it.type === 'stroke-group') {
         const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
