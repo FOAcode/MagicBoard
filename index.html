@@ -454,6 +454,11 @@
             </svg>
         </button>
     </div>
+    <button class="tool-btn" id="quick-rounded-lines" title="Rounded Corners" style="margin-left: 8px; padding: 6px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 6 Q 12 6 12 12 Q 12 18 18 18"/>
+        </svg>
+    </button>
     </div>
     
     <div id="text-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
@@ -589,6 +594,10 @@
       <span id="stroke-width-label">2</span>
     </div>
     <div class="popup-row" style="margin-top: 8px;">
+      <label for="rounded-lines" style="font-size: 13px;">Rounded Corners</label>
+      <input type="checkbox" id="rounded-lines">
+    </div>
+    <div class="popup-row" style="margin-top: 8px;">
       <label><b>Arrow Options</b></label>
     </div>
     <div class="popup-row" style="margin-left: 8px;">
@@ -713,7 +722,8 @@ let state = {
     width: 2,
     startArrow: false,
     endArrow: false,
-    arrowSize: 8
+    arrowSize: 8,
+    rounded: false
   },
   text: {
     bold: false,
@@ -1669,6 +1679,82 @@ function snapToAngle(sx, sy, mx, my, stepDeg = 15) {
   return { x: sx + Math.cos(snappedRad) * len, y: sy + Math.sin(snappedRad) * len };
 }
 
+// Helper function to build a clean polyline path with optional rounded corners
+// Always builds fresh from points - bases rounding on straight-line geometry only
+function buildPolylinePath(points, useRounding = false, radiusMultiplier = 1.5) {
+  if (!points || points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  
+  let commands = [];
+  commands.push(`M ${points[0].x} ${points[0].y}`);
+  commands.push(`L ${points[1].x} ${points[1].y}`);
+  
+  // Process remaining points - apply rounding to corners
+  for (let i = 2; i < points.length; i++) {
+    const incomingPt = points[i - 2];
+    const cornerPt = points[i - 1];
+    const outgoingPt = points[i];
+    
+    if (useRounding) {
+      const arc = generateCornerArc(incomingPt, cornerPt, outgoingPt, radiusMultiplier);
+      if (arc) {
+        // Remove the last "L cornerPt" command that was added
+        commands.pop();
+        // Add arc commands instead
+        commands.push(`L ${arc.start.x} ${arc.start.y}`);
+        commands.push(`Q ${arc.control.x} ${arc.control.y} ${arc.end.x} ${arc.end.y}`);
+        commands.push(`L ${outgoingPt.x} ${outgoingPt.y}`);
+      } else {
+        // Arc failed, just add straight line to current point
+        commands.push(`L ${outgoingPt.x} ${outgoingPt.y}`);
+      }
+    } else {
+      // No rounding, straight line
+      commands.push(`L ${outgoingPt.x} ${outgoingPt.y}`);
+    }
+  }
+  
+  return commands.join(' ');
+}
+
+// Generate a smooth arc between two line segments at their corner point
+// p1: point before corner, p2: corner point, p3: point after corner
+function generateCornerArc(p1, p2, p3, radiusMultiplier = 1.5) {
+  // Calculate distances
+  const d1 = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+  const d2 = Math.hypot(p3.x - p2.x, p3.y - p2.y);
+  
+  if (d1 === 0 || d2 === 0) return null; // Degenerate case
+  
+  // Radius is proportional to the average line length
+  // Longer lines = larger radius, shorter lines = smaller radius
+  const avgLength = (d1 + d2) / 2;
+  const baseRadius = avgLength * 0.25 * radiusMultiplier; // 25% of average line length, scaled by multiplier
+  
+  // Pull back from corner, but cap at 40% of each line's length
+  const pullback1 = Math.min(baseRadius, d1 * 0.4);
+  const pullback2 = Math.min(baseRadius, d2 * 0.4);
+  
+  // Unit vectors along the lines
+  const u1x = (p2.x - p1.x) / d1;
+  const u1y = (p2.y - p1.y) / d1;
+  const u2x = (p3.x - p2.x) / d2;
+  const u2y = (p3.y - p2.y) / d2;
+  
+  // Arc endpoints pulled back from the corner
+  const arcStartX = p2.x - u1x * pullback1;
+  const arcStartY = p2.y - u1y * pullback1;
+  const arcEndX = p2.x + u2x * pullback2;
+  const arcEndY = p2.y + u2y * pullback2;
+  
+  // Control point at the corner for smooth transition
+  return { 
+    start: { x: arcStartX, y: arcStartY }, 
+    end: { x: arcEndX, y: arcEndY }, 
+    control: { x: p2.x, y: p2.y } 
+  };
+}
 
 /* Selection management */
 function selectItem(idToSelect, addToSelection = false){
@@ -2341,15 +2427,13 @@ function onBoardPointerDown(e) {
       if (straightLineState && !isSingleLineMode) {
         drawing = true;
         board.setPointerCapture?.(e.pointerId);
-        const anchorX = straightLineState.lastX ?? straightLineState.startX;
-        const anchorY = straightLineState.lastY ?? straightLineState.startY;
-        let finalX = x, finalY = y;
-        if (e.ctrlKey) {
-          const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
-          finalX = snapped.x; finalY = snapped.y;
+        // Don't add point here - we'll add it in onBoardPointerUp
+        // Just prepare for tracking
+        if (!straightLineState.points) {
+          straightLineState.points = [
+            { x: straightLineState.startX, y: straightLineState.startY }
+          ];
         }
-        const clickedPath = straightLineState.basePath + ` L ${finalX} ${finalY}`;
-        currentPath.setAttribute('d', clickedPath);
       } else {
         drawing = true;
         board.setPointerCapture?.(e.pointerId);
@@ -2363,6 +2447,7 @@ function onBoardPointerDown(e) {
           lastX: x,
           lastY: y,
           basePath: d,
+          points: [{ x, y }],
           isPending: true,
           isSingle: isSingleLineMode,
           isInterrupted: false
@@ -2526,7 +2611,17 @@ function onBoardPointerMove(e) {
 
       if (e.ctrlKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
-        currentPath.setAttribute('d', straightLineState.basePath + ` L ${snapped.x} ${snapped.y}`);
+        
+        // Build preview path - show what final path will look like based on rounded setting
+        let previewPts = [];
+        if (straightLineState.points) {
+          previewPts = [...straightLineState.points];
+        } else {
+          previewPts = [{x: straightLineState.startX, y: straightLineState.startY}];
+        }
+        previewPts.push({x: snapped.x, y: snapped.y});
+        const previewPath = buildPolylinePath(previewPts, state.stroke.rounded, 1.5);
+        currentPath.setAttribute('d', previewPath);
         
         // Optional: If Alt is held and snapped, update guides to match the snapped position
         guideH.setAttribute('y1', snapped.y);
@@ -2534,7 +2629,16 @@ function onBoardPointerMove(e) {
         guideV.setAttribute('x1', snapped.x);
         guideV.setAttribute('x2', snapped.x);
       } else {
-        currentPath.setAttribute('d', straightLineState.basePath + ` L ${x} ${y}`);
+        // Build preview path - show what final path will look like based on rounded setting
+        let previewPts = [];
+        if (straightLineState.points) {
+          previewPts = [...straightLineState.points];
+        } else {
+          previewPts = [{x: straightLineState.startX, y: straightLineState.startY}];
+        }
+        previewPts.push({x: x, y: y});
+        const previewPath = buildPolylinePath(previewPts, state.stroke.rounded, 1.5);
+        currentPath.setAttribute('d', previewPath);
       }
     } else {
       if (guides) guides.style.display = 'none';
@@ -2607,7 +2711,22 @@ function onBoardPointerUp(e){
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         finalX = snapped.x; finalY = snapped.y;
       }
-      const d = straightLineState.basePath + ` L ${finalX} ${finalY}`;
+      
+      // Track points if not already done
+      if (!straightLineState.points) {
+        straightLineState.points = [
+          { x: straightLineState.startX, y: straightLineState.startY }
+        ];
+      }
+      
+      // Add the new point only if it's different from the last point
+      const lastPt = straightLineState.points[straightLineState.points.length - 1];
+      if (!lastPt || lastPt.x !== finalX || lastPt.y !== finalY) {
+        straightLineState.points.push({ x: finalX, y: finalY });
+      }
+      
+      // Build final path using clean helper function with correct rounding setting
+      const d = buildPolylinePath(straightLineState.points, state.stroke.rounded, 1.5);
       currentPath.setAttribute('d', d);
 
       if (straightLineState.isSingle) {
@@ -3776,6 +3895,27 @@ startArrowInput.checked = state.stroke.startArrow;
 endArrowInput.checked = state.stroke.endArrow;
 arrowSizeInput.value = state.stroke.arrowSize;
 arrowSizeLabel.innerText = state.stroke.arrowSize;
+
+// Rounded corners control
+const roundedLinesInput = el('#rounded-lines');
+if (roundedLinesInput) {
+  roundedLinesInput.addEventListener('change', (e) => {
+    state.stroke.rounded = e.target.checked;
+    const quickRoundedBtn = el('#quick-rounded-lines');
+    if (quickRoundedBtn) quickRoundedBtn.classList.toggle('active', e.target.checked);
+  });
+  roundedLinesInput.checked = state.stroke.rounded;
+}
+
+// Wire quick rounded button
+const quickRoundedBtn = el('#quick-rounded-lines');
+if (quickRoundedBtn) {
+  quickRoundedBtn.addEventListener('click', (e) => {
+    state.stroke.rounded = !state.stroke.rounded;
+    if (roundedLinesInput) roundedLinesInput.checked = state.stroke.rounded;
+    quickRoundedBtn.classList.toggle('active', state.stroke.rounded);
+  });
+}
 // --- End Stroke Popup ---
 
 // --- Text Popup Wiring ---
