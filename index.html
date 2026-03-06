@@ -2513,7 +2513,7 @@ function onBoardPointerDown(e) {
       lassoPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       lassoPath.setAttribute('d', `M ${x} ${y}`);
       lassoPath.classList.add('lasso-path');
-      svg.appendChild(lassoPath);
+      el('#guide-layer').appendChild(lassoPath);
       clearSelection();
       refreshLayers();
       board.setPointerCapture?.(e.pointerId);
