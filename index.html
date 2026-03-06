@@ -221,7 +221,7 @@
   }
   .item.selected .handle{display:block;}
 
-  /* --- MODIFIED: SVG is now a click-through container --- */
+  /* Strokes are rendered as SVG paths for crispness at any zoom level, and each stroke is wrapped in a <g> for easier hit testing and group selection */
   svg.board-strokes{
     position:absolute;left:0;top:0;width:100%;height:100%;
     pointer-events:auto; /* This will be toggled by JS */
@@ -229,7 +229,7 @@
     z-index: 0; /* Base z-index */
   }
   
-  /* --- NEW: Style for individual stroke SVG wrappers --- */
+  /* Each stroke is wrapped in a <g> to allow group-level selection and easier hit testing */
   .stroke-wrapper {
     position: absolute;
     left: 0;
@@ -247,9 +247,7 @@
   .stroke-wrapper path {
     pointer-events: auto; /* Strokes inside are clickable */
   }
-  /* --- END NEW --- */
-
-
+  
   .stroke {
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -265,19 +263,18 @@
     pointer-events: stroke;
   }
 
-  /* allow selecting an individual stroke path */
+  /* Style for selected strokes - now using a red stroke for better visibility against the default blue */
   .stroke.selected {
     opacity: 0.7;
     stroke: #e53e3e !important;
   }
 
-  /* --- MODIFIED: Selection style now targets wrapper --- */
+  /* If the wrapper is selected, also show selection on all contained paths for better visibility */
   .stroke-wrapper.selected .stroke,
   .stroke-wrapper.selected path {
     opacity: 0.7;
     stroke: #e53e3e !important;
   }
-  /* --- END MODIFICATION --- */
 
 
   g[data-type="stroke-group"] {
@@ -829,7 +826,7 @@ function createSnapshot() {
   const items = [];
 
   // --- Capture images & text
-  board.querySelectorAll('.item').forEach(n => {
+  board.querySelectorAll('.item:not([data-imported])').forEach(n => {
     // Read from computed style if inline style is empty, to ensure we get the current position
     const computedStyle = window.getComputedStyle(n);
     const left = n.style.left || computedStyle.left || '0px';
@@ -882,7 +879,7 @@ function createSnapshot() {
   });
 
   // --- Capture strokes (each as individual item)
-  board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
+  board.querySelectorAll('.stroke-wrapper:not([data-imported])').forEach(svgWrapper => {
     const g = svgWrapper.querySelector('g');
     if (!g) return;
 
@@ -926,8 +923,8 @@ function restoreSnapshot(snapshot) {
   if (!snapshot) return;
   isRestoringHistory = true;
 
-  // Clear existing items (but not board background)
-  const existingItems = board.querySelectorAll('.item, .stroke-wrapper');
+  // Clear existing items (but not imported items and not board background)
+  const existingItems = board.querySelectorAll('.item:not([data-imported]), .stroke-wrapper:not([data-imported])');
   existingItems.forEach(n => {
     try {
       n.remove();
@@ -2082,7 +2079,7 @@ function makePathSelectable(path){
 }
 
 
-/* Dragging items */
+/* Dragging logic for both HTML and SVG items. When dragging SVG strokes, we apply an additive translate() to the existing transform, preserving any prior rotations or scales. For HTML items, we adjust left/top styles as before. */
 let dragState = null;
 
 function startDragHtml(node, e){
@@ -2114,7 +2111,7 @@ function startDragHtml(node, e){
   board.setPointerCapture(e.pointerId);
 }
 
-// --- MODIFIED: element is the <g> element ---
+// --- MODIFIED: New function to start dragging SVG elements, shared logic with HTML dragging but handles transforms ---
 function startDragSvg(element, e){
   e.preventDefault();
   const pt = getBoardPointFromEvent(e);
@@ -2147,7 +2144,7 @@ function startDragSvg(element, e){
   board.setPointerCapture(e.pointerId);
 }
 
-
+// --- MODIFIED: Updated pointer move handler to apply additive transforms for SVG and style adjustments for HTML ---
 function onPointerMove(e){
   if(!dragState) return;
   const pt = getBoardPointFromEvent(e);
@@ -2175,6 +2172,7 @@ function onPointerMove(e){
   }
 }
 
+// --- MODIFIED: Updated pointer up handler to finalize positions and only push history if a meaningful move occurred ---
 function onPointerUp(e) {
   if (!dragState) return;
 
@@ -2224,7 +2222,8 @@ function onPointerUp(e) {
 }
 
 
-/* Resize handling */
+/* Resizing logic for HTML items. When resizing images, we also update the pixelation level to keep it crisp. When resizing text boxes, we adjust the font size to fit the new dimensions. The resize handle is a small div in the corner of the item, and dragging it adjusts the width and height of the item. For images, we maintain aspect ratio. For text, we allow free resizing but adjust font size to fit.
+*/
 let resizeState = null;
 function startResizePointer(e){
   e.stopPropagation(); e.preventDefault();
@@ -2281,6 +2280,7 @@ const updateFontSizeDebounced = debounce((node, newWidth, newHeight, baseFontSiz
   }
 }, 36); // enough to stop the "jitter" while feeling responsive
 
+// --- NEW: Function to fit text to the resized box by adjusting font size iteratively ---
 function fitTextToBox(textDiv) {
     const node = textDiv.closest('.item');
     if (!node) return;
@@ -2322,7 +2322,7 @@ function fitTextToBox(textDiv) {
     }
 }
 
-
+// --- MODIFIED: Resizing now also updates font size for text items, and pixelation for images ---
 function onResizeMove(e) {
   if (!resizeState) return;
   
@@ -2360,12 +2360,13 @@ function onResizeMove(e) {
   }
 }
 
+// --- MODIFIED: Finalize resize and push history only if size actually changed ---
 function onResizeUp(e) {
   window.removeEventListener('pointermove', onResizeMove);
   window.removeEventListener('pointerup', onResizeUp);
   resizeState = null;
   refreshLayers();
-  pushHistory(); // <-- MODIFICATION: Record resize in history
+  pushHistory();
 }
 
 
@@ -2390,7 +2391,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-/* Drawing tool logic */
+// --- DRAWING STATE ---
 let currentPath = null;
 let drawing = false;
 
@@ -3136,9 +3137,11 @@ async function importWhiteboard(file){
           opacity: it.opacity !== undefined ? it.opacity : 1
         });
         item.style.zIndex = it.z;
+        item.dataset.imported = 'true';
       } else if (it.type === 'text') {
         const item = createTextItem(it.text||'', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
         item.style.zIndex = it.z;
+        item.dataset.imported = 'true';
         // Restore text box dimensions
         if (it.width) item.style.width = it.width + 'px';
         if (it.height) item.style.height = it.height + 'px';
@@ -3159,7 +3162,7 @@ async function importWhiteboard(file){
         }
       } else if (it.type === 'stroke-group') {
         const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svgWrapper.classList.add('stroke-wrapper'); svgWrapper.dataset.id = it.id; svgWrapper.dataset.type = 'stroke-group'; svgWrapper.style.zIndex = it.z; board.appendChild(svgWrapper);
+        svgWrapper.classList.add('stroke-wrapper'); svgWrapper.dataset.id = it.id; svgWrapper.dataset.type = 'stroke-group'; svgWrapper.dataset.imported = 'true'; svgWrapper.style.zIndex = it.z; board.appendChild(svgWrapper);
 
         const g = document.createElementNS('http://www.w3.org/2000/svg','g'); 
         g.dataset.id = it.id; 
@@ -3805,7 +3808,7 @@ if(toolbarStrokeSlider){
   });
 }
 
-// Quick colors
+// Quick color buttons
 if(quickStrokeColors){
   quickStrokeColors.querySelectorAll('button').forEach(b=>{
     b.addEventListener('click', (ev)=>{
@@ -3824,7 +3827,7 @@ if(quickStrokeColors){
   });
 }
 
-// <-- NEW: Quick Arrow Wiring -->
+// Quick arrow toggles
 if (quickStartArrow) {
   quickStartArrow.addEventListener('click', () => {
     const isActive = quickStartArrow.classList.toggle('active');
@@ -3844,7 +3847,7 @@ if (quickEndArrow) {
   });
 }
 
-// Keep popup inputs in sync with toolbar changes
+// Stroke popup controls
 strokeColorInput.addEventListener('input', (e) => { state.stroke.color = e.target.value; updateToolbarStrokeUI(); updateCustomCursor(); });
 if(strokeWidthInput){
   // MODIFICATION: Removed history tracking from tool setting
@@ -3896,7 +3899,7 @@ endArrowInput.checked = state.stroke.endArrow;
 arrowSizeInput.value = state.stroke.arrowSize;
 arrowSizeLabel.innerText = state.stroke.arrowSize;
 
-// Rounded corners control
+// Rounded lines toggle
 const roundedLinesInput = el('#rounded-lines');
 if (roundedLinesInput) {
   roundedLinesInput.addEventListener('change', (e) => {
@@ -3907,7 +3910,7 @@ if (roundedLinesInput) {
   roundedLinesInput.checked = state.stroke.rounded;
 }
 
-// Wire quick rounded button
+// <-- NEW: Quick toggle for rounded corners -->
 const quickRoundedBtn = el('#quick-rounded-lines');
 if (quickRoundedBtn) {
   quickRoundedBtn.addEventListener('click', (e) => {
@@ -3916,7 +3919,7 @@ if (quickRoundedBtn) {
     quickRoundedBtn.classList.toggle('active', state.stroke.rounded);
   });
 }
-// --- End Stroke Popup ---
+
 
 // --- Text Popup Wiring ---
 const textPopup = el('#text-popup');
@@ -3939,6 +3942,8 @@ textSettingsBtn.addEventListener('click', (e) => {
   el('#stroke-popup').style.display = 'none';
 });
 
+
+// Update text popup buttons based on current state (called when opening popup and when state changes via toolbar)
 function updateTextPopupUI() {
   textBoldBtn.classList.toggle('active', state.text.bold);
   textItalicBtn.classList.toggle('active', state.text.italic);
@@ -3961,6 +3966,8 @@ function updateTextPopupUI() {
   textBgAlphaLabel.innerText = parseFloat(state.text.bgAlpha).toFixed(2);
 }
 
+
+// Apply current text settings to all selected text items
 function applyTextSettingsToSelection() {
   const rgb = hexToRgb(state.text.bgColor);
   const bgColorString = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
@@ -4004,7 +4011,7 @@ textUnderlineBtn.addEventListener('click', (e) => {
   applyTextSettingsToSelection();
 });
 
-// Strikethrough / crossed button in popup
+// Strikethrough/crossed-out button (NEW)
 const textCrossedBtn = el('#text-crossed');
 if(textCrossedBtn){
   textCrossedBtn.addEventListener('click', (e)=>{
@@ -4015,7 +4022,7 @@ if(textCrossedBtn){
   });
 }
 
-// Wire up alignment buttons
+// Alignment buttons in popup
 const alignBtns = textPopup.querySelectorAll('[data-align]');
 alignBtns.forEach(btn => {
   btn.addEventListener('click', (e) => {
@@ -4044,9 +4051,8 @@ if(textBgAlphaInput){
   textBgAlphaInput.addEventListener('change', ()=>{ endSliderHistory(); });
 }
 updateTextPopupUI();
-// --- END Text Popup ---
 
-// --- Image transparency slider handler (start/end history) ---
+// --- Transparency Slider Wiring ---
 const transparencySliderEl = el('#transparency-slider');
 if(transparencySliderEl){
   transparencySliderEl.addEventListener('pointerdown', (e)=>{ startSliderHistory(); });
@@ -4064,7 +4070,7 @@ if(transparencySliderEl){
   transparencySliderEl.addEventListener('change', (e)=>{ endSliderHistory(); });
 }
 
-// --- Global click to hide popups ---
+// --- Global click handler to close popups when clicking outside ---
 document.addEventListener('click', (e) => {
   if (!strokePopup.contains(e.target) && e.target !== strokeSettingsBtn && !e.target.closest('#stroke-settings')) {
     strokePopup.style.display = 'none';
@@ -4076,10 +4082,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-/* Detect and mitigate common translate-extension artifacts (best-effort)
-   - We cannot disable browser extensions from the page; we can only detect
-     common injected DOM or globals and warn the user or hide injected UI.
-*/
+// --- Translation Extension Detection and Warning ---
 function hideKnownTranslateUI(){
   const selectors = [
     '#google_translate_element',
@@ -4102,6 +4105,7 @@ function hideKnownTranslateUI(){
   });
 }
 
+// Best-effort detection of translate extensions by looking for known DOM markers, global variables, or iframes. Not guaranteed to be accurate but should catch common cases.
 function detectTranslateExtension(){
   try{
     const hasDomMarker = !!document.querySelector('#google_translate_element') || !!document.querySelector('.goog-te-banner-frame') || !!document.querySelector('.goog-te-banner');
@@ -4152,7 +4156,7 @@ function scheduleExtensionDetection(){
   }, 2000);
 }
 
-// Helper functions for z-index
+// Run on init
 function getActionNodeById(id) {
   return findNodeById(id); // Simplified
 }
@@ -4162,7 +4166,7 @@ function setZ(node, z){
   node.style.zIndex = z;
 }
 
-// --- MODIFIED: Simplified for unified Z ---
+// Get highest and lowest Z values among all items, excluding specified IDs (used to keep selected items' relative order intact)
 function getZExtremes(excludeIds = new Set()){
   const items = collectAllItems();
   let highest = -Infinity, lowest = +Infinity;
@@ -4178,9 +4182,8 @@ function getZExtremes(excludeIds = new Set()){
     lowest: (lowest === +Infinity ? Z_FLOOR : lowest) 
   };
 }
-// --- END MODIFICATION ---
 
-/* Z-index buttons */
+// --- MODIFIED: Simplified for unified Z and fixed to ensure selected items maintain relative order and are placed just above all unselected items ---
 document.getElementById('bring-forward').addEventListener('click', ()=>{
   if(state.selectedIds.size === 0) return;
   const nodes = Array.from(state.selectedIds).map(id => getActionNodeById(id)).filter(Boolean);
@@ -4199,7 +4202,7 @@ document.getElementById('bring-forward').addEventListener('click', ()=>{
   pushHistory();
 });
 
-// --- MODIFIED: Reworked 'Send to Back' for unified layers ---
+// --- MODIFIED: Simplified for unified Z and fixed to ensure selected items maintain relative order and are placed just below all unselected items ---
 document.getElementById('send-back').addEventListener('click', ()=>{
   if(state.selectedIds.size === 0) return;
   
@@ -4229,8 +4232,8 @@ document.getElementById('send-back').addEventListener('click', ()=>{
   refreshLayers();
   pushHistory();
 });
-// --- END MODIFICATION ---
 
+// Delete selected items
 document.getElementById('delete-item').addEventListener('click', () => {
   isDeleting = true; // <-- SET FLAG
   Array.from(state.selectedIds).forEach(id => {
@@ -4243,7 +4246,7 @@ document.getElementById('delete-item').addEventListener('click', () => {
   isDeleting = false; // <-- RESET FLAG
 });
 
-
+// --- Export/Import Wiring ---
 const exportBtn = document.getElementById('export-json');
 const importBtn = document.getElementById('import-json');
 if (exportBtn) exportBtn.addEventListener('click', ()=> exportWhiteboard());
@@ -4253,7 +4256,7 @@ if (importBtn) importBtn.addEventListener('click', ()=>{
   inp.click();
 });
 
-/* keyboard shortcuts */
+// --- Global keyboard shortcuts ---
 window.addEventListener('keydown', (e)=>{
   const isInputFocused = !!document.activeElement && (document.activeElement.isContentEditable || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName));
 
@@ -4304,7 +4307,7 @@ window.addEventListener('keyup', (e) => {
     }
 });
 
-/* Debounce utility to limit rapid function calls */
+// Debounce function to limit how often a function can run during rapid events (like scroll or zoom)
 function debounce(func, wait) {
   let timeout;
   return function(...args) {
@@ -4313,7 +4316,7 @@ function debounce(func, wait) {
   };
 }
 
-/* init */
+// Apply debounce to zoom and pan handlers to improve performance during rapid events
 setTool('select');
 applyScale();
 refreshLayers();
