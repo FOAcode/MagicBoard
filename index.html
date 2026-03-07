@@ -207,11 +207,9 @@
     border-radius:6px;
     word-wrap: break-word;
     overflow-wrap: break-word;
-    white-space: pre-wrap;
+    white-space: pre;
     overflow: hidden;
     box-sizing: border-box;
-    width: 100%;
-    height: 100%;
   }
   .text-item:focus{outline:none;border:1px dashed rgba(0,0,0,0.08);background:#fff;}
   .handle{
@@ -1503,6 +1501,7 @@ function createTextItem(text='', x=100, y=100, options = {}){
   wrapper.style.zIndex = state.nextZ++; // --- MODIFIED: Use unified Z ---
   wrapper.style.minWidth = '80px';
   wrapper.style.minHeight = '28px';
+
   const p = document.createElement('div');
   p.className = 'text-item';
   p.contentEditable = 'true';
@@ -1533,12 +1532,15 @@ function createTextItem(text='', x=100, y=100, options = {}){
   });
 
   p.addEventListener('input', () => {
-      const wrapper = p.closest('.item');
-      if (wrapper) {
-          updateFontSizeDebounced(p, wrapper.clientWidth, wrapper.clientHeight);
-      }
+    const wrapper = p.closest('.item');
+    if (wrapper) {
+      const currentWidth = wrapper.offsetWidth;
+      const newWidth = Math.max(currentWidth, p.scrollWidth, 80);
+      const newHeight = Math.max(28, p.scrollHeight);
+      wrapper.style.width = newWidth + 'px';
+      wrapper.style.height = newHeight + 'px';
+    }
   });
-
   
   attachItemBehaviors(wrapper);
   board.appendChild(wrapper);
@@ -2587,7 +2589,6 @@ function onBoardPointerMove(e) {
             
             marker.appendChild(polygon);
             defs.appendChild(marker);
-            currentStrokeGroup.appendChild(defs);
             currentPath.dataset.arrowSize = arrowSize;
         }
 
