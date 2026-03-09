@@ -210,6 +210,8 @@
     white-space: pre;
     overflow: hidden;
     box-sizing: border-box;
+    width: 100%;
+    height: 100%;
   }
   .text-item:focus{outline:none;border:1px dashed rgba(0,0,0,0.08);background:#fff;}
   .handle{
@@ -2282,32 +2284,36 @@ function debounce(func, wait) {
   };
 }
 
-const updateFontSizeDebounced = debounce((textDiv, containerWidth, containerHeight) => {
-    if (!textDiv || containerWidth <= 0 || containerHeight <= 0) return;
+function fitText(textDiv, containerWidth, containerHeight) {
+    if (!textDiv || containerWidth <= 20 || containerHeight <= 10) {
+      if(textDiv) textDiv.style.fontSize = '8px'; // fallback for tiny boxes
+      return;
+    }
 
     textDiv.style.whiteSpace = 'pre-wrap';
     textDiv.style.wordWrap = 'break-word';
 
-    let low = 1;
+    let low = 8; // Minimum font size
     let high = 200; // Max font size
     let bestSize = low;
 
     while (low <= high) {
         let mid = Math.floor((low + high) / 2);
-        if (mid === bestSize) break; // Avoid infinite loop
+        if (mid < low) break; // prevent infinite loops
+        
         textDiv.style.fontSize = mid + 'px';
 
         if (textDiv.scrollHeight <= containerHeight && textDiv.scrollWidth <= containerWidth) {
-            // It fits, try larger
             bestSize = mid;
             low = mid + 1;
         } else {
-            // It doesn't fit, try smaller
             high = mid - 1;
         }
     }
     textDiv.style.fontSize = bestSize + 'px';
-}, 100);
+}
+
+const updateFontSizeDebounced = debounce(fitText, 100);
 
 /* Resizing logic for HTML items. When resizing images, we also update the pixelation level to keep it crisp. When resizing text boxes, we adjust the font size to fit the new dimensions. The resize handle is a small div in the corner of the item, and dragging it adjusts the width and height of the item. For images, we maintain aspect ratio. For text, we allow free resizing but adjust font size to fit.
 */
@@ -2356,7 +2362,7 @@ function onResizeMove(e) {
     node.style.height = newHeight + 'px';
 
     const textItem = node.querySelector('.text-item');
-    updateFontSizeDebounced(textItem, newWidth, newHeight);
+    fitText(textItem, newWidth, newHeight);
   }
 }
 
@@ -3019,6 +3025,7 @@ async function exportWhiteboard(){
         bold: p.style.fontWeight === 'bold' || computedStyle.fontWeight === '700' || computedStyle.fontWeight === 'bold',
         italic: p.style.fontStyle === 'italic' || computedStyle.fontStyle === 'italic',
         underline: p.style.textDecoration.includes('underline') || computedStyle.textDecoration.includes('underline'),
+        crossed: p.style.textDecoration.includes('line-through') || computedStyle.textDecoration.includes('line-through'),
         color: p.style.color || computedStyle.color,
         backgroundColor: p.style.backgroundColor || computedStyle.backgroundColor,
         fontSize: p.style.fontSize || computedStyle.fontSize,
@@ -3144,16 +3151,22 @@ async function importWhiteboard(file){
         // Restore text box dimensions
         if (it.width) item.style.width = it.width + 'px';
         if (it.height) item.style.height = it.height + 'px';
+        
+        const p = item.querySelector('.text-item');
+        
         if (it.style) {
-          const p = item.querySelector('.text-item');
           p.style.fontWeight = it.style.bold ? 'bold' : 'normal';
           p.style.fontStyle = it.style.italic ? 'italic' : 'normal';
-          p.style.textDecoration = it.style.underline ? 'underline' : 'none';
+          const td = [];
+          if(it.style.underline) td.push('underline');
+          if(it.style.crossed) td.push('line-through');
+          p.style.textDecoration = td.join(' ');
           if (it.style.color) p.style.color = it.style.color;
           if (it.style.backgroundColor) p.style.backgroundColor = it.style.backgroundColor;
-          if (it.style.fontSize) p.style.fontSize = it.style.fontSize;
           if (it.style.textAlign) p.style.textAlign = it.style.textAlign;
         }
+
+        fitText(p, it.width, it.height);
 
       } else if (it.type === 'stroke-group') {
         const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
