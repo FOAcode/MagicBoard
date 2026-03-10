@@ -2290,6 +2290,9 @@ function fitText(textDiv, containerWidth, containerHeight) {
       return;
     }
 
+    const wasEditable = textDiv.isContentEditable;
+    if (wasEditable) textDiv.contentEditable = 'false';
+
     textDiv.style.whiteSpace = 'pre-wrap';
     textDiv.style.wordWrap = 'break-word';
 
@@ -2311,6 +2314,8 @@ function fitText(textDiv, containerWidth, containerHeight) {
         }
     }
     textDiv.style.fontSize = bestSize + 'px';
+
+    if (wasEditable) textDiv.contentEditable = 'true';
 }
 
 const updateFontSizeDebounced = debounce(fitText, 100);
