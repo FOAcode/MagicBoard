@@ -2286,37 +2286,46 @@ function debounce(func, wait) {
 
 function fitText(textDiv, containerWidth, containerHeight) {
     if (!textDiv || containerWidth <= 20 || containerHeight <= 10) {
-      if(textDiv) textDiv.style.fontSize = '8px'; // fallback for tiny boxes
+      if(textDiv) textDiv.style.fontSize = '8px'; 
       return;
     }
 
     const wasEditable = textDiv.isContentEditable;
+    // Temporarily disable editing to prevent the cursor from affecting measurements
     if (wasEditable) textDiv.contentEditable = 'false';
 
     textDiv.style.whiteSpace = 'pre-wrap';
     textDiv.style.wordWrap = 'break-word';
 
-    let low = 8; // Minimum font size
-    let high = 200; // Max font size
+    let low = 8; 
+    let high = 1000; 
     let bestSize = low;
 
     while (low <= high) {
         let mid = Math.floor((low + high) / 2);
-        if (mid < low) break; // prevent infinite loops
-        
         textDiv.style.fontSize = mid + 'px';
 
-        if (textDiv.scrollHeight <= containerHeight && textDiv.scrollWidth <= containerWidth) {
+        /**
+         * FIX: ADD TOLERANCE (+1.5)
+         * Browser zoom causes scrollHeight/Width to fluctuate by sub-pixels.
+         * Adding 1.5px prevents the font from "jumping" or getting stuck 
+         * at a tiny size when zoomed out.
+         */
+        const fitsHeight = textDiv.scrollHeight <= containerHeight + 1.5;
+        const fitsWidth = textDiv.scrollWidth <= containerWidth + 1.5;
+
+        if (fitsHeight && fitsWidth) {
             bestSize = mid;
             low = mid + 1;
         } else {
             high = mid - 1;
         }
     }
+    
     textDiv.style.fontSize = bestSize + 'px';
-
     if (wasEditable) textDiv.contentEditable = 'true';
 }
+
 
 const updateFontSizeDebounced = debounce(fitText, 100);
 
@@ -2343,31 +2352,67 @@ function startResizePointer(e){
 // --- MODIFIED: Resizing now also updates font size for text items, and pixelation for images ---
 function onResizeMove(e) {
   if (!resizeState) return;
-  
+
+  // 1. Calculate the movement delta adjusted for the current zoom level
   const dx = (e.clientX - resizeState.startClientX) / state.scale;
   const dy = (e.clientY - resizeState.startClientY) / state.scale;
   const node = resizeState.node;
+  const dir = resizeState.resizeDir;
 
+  let newWidth = resizeState.origW;
+  let newHeight = resizeState.origH;
+  let newLeft = resizeState.origX;
+  let newTop = resizeState.origY;
+
+  // 2. Handle Image Resizing (Maintain Aspect Ratio)
   if (node.dataset.type === 'image') {
     const img = node.querySelector('img');
     if (!img) return;
     const aspect = img.naturalWidth / img.naturalHeight;
-    let newWidth = Math.max(32, resizeState.origW + dx);
-    let newHeight = newWidth / aspect;
+    
+    // Images usually resize from the bottom-right for simplicity
+    newWidth = Math.max(32, resizeState.origW + dx);
+    newHeight = newWidth / aspect;
+    
     node.style.width = newWidth + 'px';
     node.style.height = newHeight + 'px';
     try { updateImagePixelation(node); } catch(err) {}
   } 
+  
+  // 3. Handle Text Resizing
   else if (node.dataset.type === 'text') {
-    const dir = resizeState.resizeDir;
-    const newWidth = Math.max(50, resizeState.origW + (dir.includes('e') ? dx : 0));
-    const newHeight = Math.max(20, resizeState.origH + (dir.includes('s') ? dy : 0));
+    // Horizontal Resizing
+    if (dir.includes('e')) {
+      newWidth = Math.max(50, resizeState.origW + dx);
+    } else if (dir.includes('w')) {
+      newWidth = Math.max(50, resizeState.origW - dx);
+      newLeft = resizeState.origX + (resizeState.origW - newWidth);
+    }
 
+    // Vertical Resizing
+    if (dir.includes('s')) {
+      newHeight = Math.max(20, resizeState.origH + dy);
+    } else if (dir.includes('n')) {
+      newHeight = Math.max(20, resizeState.origH - dy);
+      newTop = resizeState.origY + (resizeState.origH - newHeight);
+    }
+
+    // Apply updates to the DOM
     node.style.width = newWidth + 'px';
     node.style.height = newHeight + 'px';
+    node.style.left = newLeft + 'px';
+    node.style.top = newTop + 'px';
 
     const textItem = node.querySelector('.text-item');
-    fitText(textItem, newWidth, newHeight);
+    if (textItem) {
+      /**
+       * CRITICAL FIX FOR ZOOM:
+       * We pass a +1px tolerance buffer to fitText. 
+       * This prevents "font-size flickering" or the font getting stuck 
+       * due to sub-pixel rounding errors caused by the CSS scale transform.
+       */
+      fitText(textItem, newWidth + 1, newHeight + 1);
+    }
   }
 }
 
