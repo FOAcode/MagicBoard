@@ -3509,7 +3509,7 @@ function trimCanvasWhitespace(canvas, marginPixels = 25) {
 
 // Copy board content as PNG to clipboard - captures only the content area dynamically sized
 async function copyContentAsPNG() {
-  // Deselect everything before copying
+  // 1. Deselect everything before copying
   clearSelection();
 
   const bounds = calculateContentBounds();
@@ -3519,100 +3519,66 @@ async function copyContentAsPNG() {
   }
 
   try {
-    // Save current scale and scroll position
+    // 2. Save current state
     const originalScale = state.scale;
     const wrap = board.parentElement;
     const originalScrollLeft = wrap.scrollLeft;
     const originalScrollTop = wrap.scrollTop;
 
-    // Set a scale that fits the content nicely
-    setScale(1); // Use 1:1 scale for crisp capture
-
-    // Wait a moment for the scale to apply
+    // 3. Reset zoom to 1:1 for a crisp capture
+    // This ensures coordinate calculations match pixel values
+    setScale(1); 
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Add padding around content
+    // 4. Calculate dimensions with padding
     const padding = 30;
     const contentX = Math.max(0, bounds.minX - padding);
     const contentY = Math.max(0, bounds.minY - padding);
     const contentWidth = (bounds.maxX - bounds.minX) + (padding * 2);
     const contentHeight = (bounds.maxY - bounds.minY) + (padding * 2);
 
-    console.log(`Capturing content: ${contentWidth}x${contentHeight} at (${contentX}, ${contentY})`);
-
-    // Create a container for the screenshot
-    const tempContainer = document.createElement('div');
-    tempContainer.style.position = 'absolute';
-    tempContainer.style.left = '-9999px';
-    tempContainer.style.top = '0';
-    tempContainer.style.width = contentWidth + 'px';
-    tempContainer.style.height = contentHeight + 'px';
-    tempContainer.style.overflow = 'hidden';
-    tempContainer.style.background = '#ffffff';
-    
-    // Clone the board with all its content
-    const boardClone = board.cloneNode(true);
-    boardClone.style.position = 'absolute';
-    boardClone.style.margin = '0';
-    boardClone.style.padding = '0';
-    boardClone.style.transform = 'none';
-    boardClone.style.transformOrigin = 'none';
-    boardClone.style.zoom = '1';
-    boardClone.style.background = '#ffffff';
-    
-    // Position the cloned board to show the content area
-    const offsetX = -contentX;
-    const offsetY = -contentY;
-    boardClone.style.top = offsetY + 'px';
-    boardClone.style.left = offsetX + 'px';
-    boardClone.style.width = board.offsetWidth + 'px';
-    boardClone.style.height = board.offsetHeight + 'px';
-    
-    tempContainer.appendChild(boardClone);
-    document.body.appendChild(tempContainer);
-
-    // Capture with html2canvas
-    let canvas = await html2canvas(tempContainer, {
-      scale: 2,
-      backgroundColor: '#ffffff',
+    // 5. Capture directly from the board using cropping options
+    // This is much more reliable than cloning and moving to -9999px
+    const canvas = await html2canvas(board, {
+      scale: 2, // High DPI export
+      backgroundColor: '#ffffff', // Force white background
       useCORS: true,
-      allowTaint: true,
-      foreignObjectRendering: false,
-      logging: false,
-      windowHeight: contentHeight,
-      windowWidth: contentWidth
+      
+      // These 4 lines are the "Crop" logic:
+      x: contentX,
+      y: contentY,
+      width: contentWidth,
+      height: contentHeight,
+      
+      // Ensure the "window" size doesn't clip the capture
+      windowWidth: board.scrollWidth,
+      windowHeight: board.scrollHeight
     });
 
-    // Clean up
-    document.body.removeChild(tempContainer);
-
-    // Restore original scale and scroll
+    // 6. Restore original view
     setScale(originalScale);
     wrap.scrollLeft = originalScrollLeft;
     wrap.scrollTop = originalScrollTop;
 
-    // Copy to clipboard
+    // 7. Copy to clipboard
     canvas.toBlob(async (blob) => {
       try {
         const item = new ClipboardItem({ 'image/png': blob });
         await navigator.clipboard.write([item]);
         
-        // Show feedback popup
-        const feedback = el('#copy-feedback');
+        const feedback = document.querySelector('#copy-feedback');
         if (feedback) {
           feedback.classList.remove('show');
-          feedback.offsetHeight;
+          void feedback.offsetHeight; // Trigger reflow
           feedback.classList.add('show');
         }
-        
-        console.log('Screenshot copied');
       } catch (err) {
-        console.error('Copy error:', err);
+        console.error('Clipboard error:', err);
       }
     }, 'image/png');
 
   } catch (err) {
-    console.error('Error:', err);
+    console.error('Export failed:', err);
   }
 }
 
