@@ -960,7 +960,6 @@ function restoreSnapshot(snapshot) {
   // --- Restore each item
   for (const it of snapshot.items || []) {
     if (it.type === 'image') {
-      // Remove any existing image with this ID to avoid duplicates
       const existing = board.querySelector(`.item[data-id="${it.id}"]`);
       if (existing) {
         try { existing.remove(); } catch(e) {}
@@ -970,18 +969,15 @@ function restoreSnapshot(snapshot) {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true, opacity: it.opacity ?? 1
       });
       item.style.zIndex = it.z || 0;
-      // Pre-set width from snapshot to prevent flickering during undo/redo
-      // Height will be set by onload callback based on image aspect ratio
+      
       const imgWidth = Math.max(20, it.width || 240);
       item.style.width = imgWidth + 'px';
-      // Only restore height if it exists and the image isn't loading yet
       if (it.height && it.height > 0) {
         item.style.height = Math.max(20, it.height) + 'px';
       }
     }
 
     else if (it.type === 'text') {
-      // Remove any existing text item with this ID to avoid duplicates
       const existing = board.querySelector(`.item[data-id="${it.id}"]`);
       if (existing) {
         try { existing.remove(); } catch(e) {}
@@ -991,9 +987,12 @@ function restoreSnapshot(snapshot) {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
       });
       item.style.zIndex = it.z || 0;
-      // Restore text box dimensions from undo/redo snapshot
-      if (it.width) item.style.width = it.width + 'px';
-      if (it.height) item.style.height = it.height + 'px';
+
+      // Capture dimensions for fitText
+      const w = it.width || 200;
+      const h = it.height || 100;
+      item.style.width = w + 'px';
+      item.style.height = h + 'px';
 
       const p = item.querySelector('.text-item');
       if (p && it.style) {
@@ -1004,17 +1003,23 @@ function restoreSnapshot(snapshot) {
         p.style.fontStyle = it.style.italic ? 'italic' : 'normal';
         p.style.textDecoration = it.style.underline ? 'underline' : 'none';
         p.style.textAlign = it.style.textAlign || 'left';
+
+        // --- FIX STARTS HERE ---
+        // We MUST call fitText here to restore the "white-space: pre-wrap" 
+        // and re-calculate the fit based on the restored dimensions.
+        if (typeof fitText === 'function') {
+           fitText(p, w, h);
+        }
+        // --- FIX ENDS HERE ---
       }
     }
 
     else if (it.type === 'stroke') {
-      // Remove any existing stroke with this ID to avoid duplicates
       const existing = board.querySelector(`.stroke-wrapper[data-id="${it.id}"]`);
       if (existing) {
         try { existing.remove(); } catch(e) {}
       }
       
-      // Create stroke wrapper and group
       const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svgWrapper.classList.add('stroke-wrapper');
       svgWrapper.dataset.type = 'stroke-wrapper';
@@ -1025,7 +1030,6 @@ function restoreSnapshot(snapshot) {
       if (it.transform) g.setAttribute('transform', it.transform);
       svgWrapper.appendChild(g);
 
-      // --- Rebuild arrow markers with exact previous geometry
       let markerStart = '', markerEnd = '';
       if (it.hasStartArrow || it.hasEndArrow) {
         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -1054,7 +1058,6 @@ function restoreSnapshot(snapshot) {
         if (it.hasEndArrow) markerEnd = `url(#${mid})`;
       }
 
-      // --- Build stroke path
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.classList.add('stroke');
       path.dataset.id = it.id;
@@ -1078,52 +1081,58 @@ function restoreSnapshot(snapshot) {
   isRestoringHistory = false;
 }
 
-
 function updateUndoRedoButtons(){
   const undoBtn = el('#undo-btn'); const redoBtn = el('#redo-btn');
   if(undoBtn) undoBtn.disabled = undoStack.length <= 1; // <-- MODIFIED
   if(redoBtn) redoBtn.disabled = redoStack.length === 0;
 }
 
-function pushHistory(){
-  if(isRestoringHistory) return;
-  const snap = createSnapshot();
+function pushHistory() {
+  if (isRestoringHistory) return;
   
+  const snap = createSnapshot();
   const last = undoStack[undoStack.length - 1];
-  try {
-    // Compare snapshots ignoring 'date' and text item dimensions
-    // This prevents resizing text boxes from creating undo history
-    if (last) {
-      // Create copies for comparison, removing 'date' and text dimensions
-      const stripDimensions = (snapshot) => {
-        const copy = { ...snapshot, date: null };
-        copy.items = (copy.items || []).map(item => {
-          if (item.type === 'text') {
-            // For text items, exclude width/height from comparison
-            const { width, height, ...rest } = item;
-            return rest;
-          }
-          return item;
-        });
+
+  if (last) {
+    try {
+      /**
+       * To decide if we should save a new undo step, we compare the current 
+       * state to the last one. We ignore the 'date' property because it 
+       * changes every time a snapshot is created.
+       */
+      const stripForCompare = (snapshot) => {
+        // We create a deep-ish copy and nullify the date
+        const copy = { 
+          ...snapshot, 
+          date: null,
+          // Map through items to ensure we are comparing their current properties
+          items: snapshot.items.map(it => ({ ...it })) 
+        };
         return copy;
       };
-      
-      const lastForCompare = stripDimensions(last);
-      const snapForCompare = stripDimensions(snap);
-      
-      // If the snapshots are identical (ignoring date and text dimensions), don't push
-      if (JSON.stringify(lastForCompare) === JSON.stringify(snapForCompare)) {
+
+      const lastForCompare = JSON.stringify(stripForCompare(last));
+      const snapForCompare = JSON.stringify(stripForCompare(snap));
+
+      // If nothing has actually changed (except the timestamp), don't waste memory
+      if (lastForCompare === snapForCompare) {
         updateUndoRedoButtons();
         return;
       }
+    } catch (e) {
+      console.error("History comparison failed, pushing anyway.", e);
     }
-  } catch(e) {
-    // if stringify fails, proceed as normal
   }
-  
+
+  // Push the new state to the stack
   undoStack.push(snap);
-  if(undoStack.length > HISTORY_LIMIT) undoStack.shift();
-  // any new action clears redo
+  
+  // Keep the stack within limits
+  if (undoStack.length > HISTORY_LIMIT) {
+    undoStack.shift();
+  }
+
+  // Any new action clears the Redo path
   redoStack = [];
   updateUndoRedoButtons();
 }
@@ -3150,34 +3159,31 @@ async function exportWhiteboard(){
   const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url);
 }
 
-async function importWhiteboard(file){
+async function importWhiteboard(file) {
   try {
     const zip = await JSZip.loadAsync(file);
     const txt = await zip.file('whiteboard.json').async('text');
     const data = JSON.parse(txt);
 
     // Clear existing
-    board.querySelectorAll('.item, .stroke-wrapper').forEach(n=>n.remove());
+    board.querySelectorAll('.item, .stroke-wrapper').forEach(n => n.remove());
     svg.innerHTML = '';
 
-  // Restore state carefully to avoid replacing runtime objects (e.g. selectedIds Set)
-  const savedState = data.state || {};
-  // Primitive fields
-  if (typeof savedState.tool === 'string') state.tool = savedState.tool;
-  if (typeof savedState.scale === 'number') state.scale = savedState.scale;
-  if (typeof savedState.nextZ === 'number') state.nextZ = savedState.nextZ;
-  // Stroke & text settings (merge)
-  state.stroke = Object.assign({}, state.stroke, savedState.stroke || {});
-  state.text = Object.assign({}, state.text, savedState.text || {});
-  // Pointer
-  state.pointer = Object.assign({x:0,y:0}, savedState.pointer || {});
-  // Recreate selectedIds as a Set (saved as array during export)
-  if (Array.isArray(savedState.selectedIds)) state.selectedIds = new Set(savedState.selectedIds);
-  else state.selectedIds = new Set();
-  // Ensure nextZ falls back to top-level nextZ if present
-  state.nextZ = data.nextZ || state.nextZ || Z_FLOOR + 10;
+    // Restore state carefully to avoid replacing runtime objects
+    const savedState = data.state || {};
+    if (typeof savedState.tool === 'string') state.tool = savedState.tool;
+    if (typeof savedState.scale === 'number') state.scale = savedState.scale;
+    if (typeof savedState.nextZ === 'number') state.nextZ = savedState.nextZ;
+    state.stroke = Object.assign({}, state.stroke, savedState.stroke || {});
+    state.text = Object.assign({}, state.text, savedState.text || {});
+    state.pointer = Object.assign({ x: 0, y: 0 }, savedState.pointer || {});
+    
+    if (Array.isArray(savedState.selectedIds)) state.selectedIds = new Set(savedState.selectedIds);
+    else state.selectedIds = new Set();
+    
+    state.nextZ = data.nextZ || state.nextZ || Z_FLOOR + 10;
 
-  const importOptions = { skipSelect: true, skipFocus: true, skipRefresh: true, skipHistory: true };
+    const importOptions = { skipSelect: true, skipFocus: true, skipRefresh: true, skipHistory: true };
 
     for (const it of (data.items || [])) {
       if (it.type === 'image') {
@@ -3187,49 +3193,50 @@ async function importWhiteboard(file){
           const b = await imgBlobFile.async('blob');
           url = URL.createObjectURL(b);
         }
-        const item = createImageItem(url, it.left ?? 80, it.top ?? 80, it.width ?? 240, { 
-          ...importOptions, 
+        const item = createImageItem(url, it.left ?? 80, it.top ?? 80, it.width ?? 240, {
+          ...importOptions,
           id: it.id,
           opacity: it.opacity !== undefined ? it.opacity : 1
         });
         item.style.zIndex = it.z;
         item.dataset.imported = 'true';
       } else if (it.type === 'text') {
-        const item = createTextItem(it.text||'', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
+        const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
         item.style.zIndex = it.z;
         item.dataset.imported = 'true';
-        // Restore text box dimensions
         if (it.width) item.style.width = it.width + 'px';
         if (it.height) item.style.height = it.height + 'px';
-        
+
         const p = item.querySelector('.text-item');
-        
         if (it.style) {
           p.style.fontWeight = it.style.bold ? 'bold' : 'normal';
           p.style.fontStyle = it.style.italic ? 'italic' : 'normal';
           const td = [];
-          if(it.style.underline) td.push('underline');
-          if(it.style.crossed) td.push('line-through');
+          if (it.style.underline) td.push('underline');
+          if (it.style.crossed) td.push('line-through');
           p.style.textDecoration = td.join(' ');
           if (it.style.color) p.style.color = it.style.color;
           if (it.style.backgroundColor) p.style.backgroundColor = it.style.backgroundColor;
           if (it.style.textAlign) p.style.textAlign = it.style.textAlign;
         }
-
         fitText(p, it.width, it.height);
 
       } else if (it.type === 'stroke-group') {
         const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svgWrapper.classList.add('stroke-wrapper'); svgWrapper.dataset.id = it.id; svgWrapper.dataset.type = 'stroke-group'; svgWrapper.dataset.imported = 'true'; svgWrapper.style.zIndex = it.z; board.appendChild(svgWrapper);
+        svgWrapper.classList.add('stroke-wrapper');
+        svgWrapper.dataset.id = it.id;
+        svgWrapper.dataset.type = 'stroke-group';
+        svgWrapper.dataset.imported = 'true';
+        svgWrapper.style.zIndex = it.z;
+        board.appendChild(svgWrapper);
 
-        const g = document.createElementNS('http://www.w3.org/2000/svg','g'); 
-        g.dataset.id = it.id; 
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.dataset.id = it.id;
 
-        // recreate marker defs if present
         if (it.markers && it.markers.length) {
-          const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+          const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
           it.markers.forEach(m => {
-            const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
             const arrowSize = m.arrowSize || 8;
             marker.id = m.id;
             marker.setAttribute('markerWidth', arrowSize);
@@ -3239,58 +3246,74 @@ async function importWhiteboard(file){
             marker.setAttribute('markerUnits', 'strokeWidth');
             marker.setAttribute('orient', 'auto-start-reverse');
             marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
-
             const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
             polygon.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
             polygon.setAttribute('fill', m.color || '#000');
-            
             marker.appendChild(polygon);
             defs.appendChild(marker);
           });
           g.appendChild(defs);
         }
 
-        g.dataset.type = 'stroke-group-g'; 
-        // Restore the transform to reposition the stroke group
+        g.dataset.type = 'stroke-group-g';
         if (it.transform && it.transform !== 'null' && typeof it.transform === 'string' && it.transform.trim()) {
           g.setAttribute('transform', it.transform);
         }
         svgWrapper.appendChild(g);
         (it.paths || []).forEach(p => {
-          const path = document.createElementNS('http://www.w3.org/2000/svg','path'); 
-          path.classList.add('stroke'); 
-          path.dataset.type = 'stroke'; 
-          path.dataset.id = id('stroke'); 
-          path.setAttribute('d', p.d); 
-          path.setAttribute('stroke', it.color); 
-          path.setAttribute('stroke-width', it.width); 
-          if (p.markerStart) path.setAttribute('marker-start', p.markerStart); 
-          if (p.markerEnd) path.setAttribute('marker-end', p.markerEnd); 
-          
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.classList.add('stroke');
+          path.dataset.type = 'stroke';
+          path.dataset.id = id('stroke');
+          path.setAttribute('d', p.d);
+          path.setAttribute('stroke', it.color);
+          path.setAttribute('stroke-width', it.width);
+          if (p.markerStart) path.setAttribute('marker-start', p.markerStart);
+          if (p.markerEnd) path.setAttribute('marker-end', p.markerEnd);
+
           const anyMarker = it.markers && it.markers.length > 0;
           if (anyMarker) {
-              path.dataset.arrowSize = it.markers[0].arrowSize || 8;
+            path.dataset.arrowSize = it.markers[0].arrowSize || 8;
           }
 
-          g.appendChild(path); 
+          g.appendChild(path);
           makePathSelectable(path);
         });
         makeSvgSelectable(g);
       }
     }
 
-    clearSelection(); refreshLayers();
-    // Ensure the app returns to select tool after import
+    clearSelection();
+    refreshLayers();
     setTool('select');
-  // Reset history and capture the imported state as the base snapshot
-  undoStack = []; redoStack = []; pushHistory();
+    
+    // --- ADDED REFIT LOGIC ---
+    const hasContent = board.querySelectorAll('.item, .stroke-wrapper').length > 0;
+    if (hasContent) {
+      refitToContent(); // First refit
+      setTimeout(() => {
+        refitToContent(); // Second refit after layout settles
+      }, 50);
+    }
+    // -------------------------
+
+    undoStack = [];
+    redoStack = [];
+    pushHistory();
   } catch (err) {
     console.error('Import failed:', err);
     const btn = document.getElementById('import-json');
-    if (btn) { const oldTxt = btn.querySelector('span').innerText; btn.querySelector('span').innerText = 'Failed!'; btn.style.color = 'red'; setTimeout(()=>{ btn.querySelector('span').innerText = oldTxt; btn.style.color = ''; },2000); }
+    if (btn) {
+      const oldTxt = btn.querySelector('span').innerText;
+      btn.querySelector('span').innerText = 'Failed!';
+      btn.style.color = 'red';
+      setTimeout(() => {
+        btn.querySelector('span').innerText = oldTxt;
+        btn.style.color = '';
+      }, 2000);
+    }
   }
 }
-
 
 /* Event wiring */
 board.addEventListener('pointerdown', onBoardPointerDown, {capture: true});
