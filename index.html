@@ -418,6 +418,25 @@
       display: none;
     }
   }
+
+  /* Added to shrink buttons when toolbar is condensed */
+  .toolbar-condensed .responsive-icon-btn {
+      gap: 0;
+      padding: 6px;
+      width: 36px;
+      justify-content: center;
+  }
+  .toolbar-condensed .responsive-icon-btn span {
+      display: none;
+  }
+
+  /* Added to shrink main tool buttons when toolbar is super condensed */
+  .toolbar-super-condensed #tool-select,
+  .toolbar-super-condensed #tool-draw,
+  .toolbar-super-condensed #tool-text {
+    min-width: 38px;
+    width: 38px;
+  }
 </style>
 </head>
 <body>
@@ -786,6 +805,12 @@ let isRestoringHistory = false; // Guard to avoid recording history while restor
 // Slider history guard: record snapshot at slider start and final at end
 let sliderChanging = false;
 let isDeleting = false;
+
+window.addEventListener('resize', () => {
+    // We don't want to check for overflow while resizing is in progress
+    if(document.body.classList.contains('dragging')) return;
+    checkToolbarOverflow();
+});
 
 function startSliderHistory(){
   if(sliderChanging) return;
@@ -1311,16 +1336,28 @@ function setTool(t){
     if (customCursor) customCursor.style.display = 'block';
 
 
-    if (toolbarStroke) {
+        if (toolbarStroke) {
 
 
-        toolbarStroke.style.display = 'flex';
+            toolbarStroke.style.display = 'flex';
 
 
-        setTimeout(() => { try { updateToolbarStrokeUI(); } catch (e) { } }, 0);
+            const quickColors = el('#quick-stroke-colors');
 
 
-    }
+            if (quickColors) {
+
+
+                quickColors.style.display = 'none'; // Initially hide
+
+
+            }
+
+
+            setTimeout(() => { try { updateToolbarStrokeUI(); } catch (e) { } }, 0);
+
+
+        }
 
 
     updateCustomCursor();
@@ -1362,25 +1399,436 @@ function setTool(t){
   const toolbarText = el('#text-toolbar');
 
 
-  if (toolbarText) {
+          if (toolbarText) {
 
 
-    toolbarText.style.display = (t === 'text') ? 'flex' : 'none';
+              toolbarText.style.display = (t === 'text') ? 'flex' : 'none';
 
 
-    if (t === 'text') setTimeout(()=>{ try{ updateToolbarTextUI(); }catch(e){} }, 0);
+              if (t === 'text') setTimeout(()=>{ try{ updateToolbarTextUI(); }catch(e){} }, 0);
 
 
-  }
+          }
 
 
-}
+              checkToolbarOverflow();
 
 
+              }
 
 
+          
 
-function updateCustomCursor() {
+
+              function checkToolbarOverflow() {
+
+
+          
+
+
+                  const toolbar = el('.toolbar');
+
+
+          
+
+
+                  if (!toolbar) return;
+
+
+          
+
+
+              
+
+
+          
+
+
+                  setTimeout(() => {
+
+
+          
+
+
+                      if (document.body.classList.contains('dragging')) return;
+
+
+          
+
+
+              
+
+
+          
+
+
+                      // --- Create an off-screen clone to pre-determine the final state ---
+
+
+          
+
+
+                      const clone = toolbar.cloneNode(true);
+
+
+          
+
+
+                      clone.style.position = 'absolute';
+
+
+          
+
+
+                      clone.style.left = '-9999px';
+
+
+          
+
+
+                      clone.style.top = '-9999px';
+
+
+          
+
+
+                      clone.style.visibility = 'hidden';
+
+
+          
+
+
+                      clone.style.width = toolbar.clientWidth + 'px';
+
+
+          
+
+
+                      document.body.appendChild(clone);
+
+
+          
+
+
+              
+
+
+          
+
+
+                      const mainToolsFull = { '#tool-select': 'Select', '#tool-draw': 'Draw', '#tool-text': 'Text' };
+
+
+          
+
+
+                      const mainToolsShort = { '#tool-select': 'S', '#tool-draw': 'D', '#tool-text': 'T' };
+
+
+          
+
+
+              
+
+
+          
+
+
+                      // --- Use the clone to determine the required condensation level ---
+
+
+          
+
+
+                      let condensationLevel = 0;
+
+
+          
+
+
+              
+
+
+          
+
+
+                      // Reset clone to full expansion to get a baseline
+
+
+          
+
+
+                      clone.classList.remove('toolbar-condensed', 'toolbar-super-condensed');
+
+
+          
+
+
+                      for (const id in mainToolsFull) { clone.querySelector(id).innerText = mainToolsFull[id]; }
+
+
+          
+
+
+                      const quickColorsClone = clone.querySelector('#quick-stroke-colors');
+
+
+          
+
+
+                      const strokeToolbarClone = clone.querySelector('#stroke-toolbar');
+
+
+          
+
+
+                      if (quickColorsClone && strokeToolbarClone && strokeToolbarClone.style.display !== 'none') {
+
+
+          
+
+
+                          quickColorsClone.style.display = 'flex';
+
+
+          
+
+
+                      }
+
+
+          
+
+
+              
+
+
+          
+
+
+                      // Check overflow on the clone in stages
+
+
+          
+
+
+                      if (clone.scrollWidth > clone.clientWidth + 1) {
+
+
+          
+
+
+                          condensationLevel = 1;
+
+
+          
+
+
+                          clone.classList.add('toolbar-condensed');
+
+
+          
+
+
+                      }
+
+
+          
+
+
+                      if (clone.scrollWidth > clone.clientWidth + 1) {
+
+
+          
+
+
+                          condensationLevel = 2;
+
+
+          
+
+
+                          if (quickColorsClone) quickColorsClone.style.display = 'none';
+
+
+          
+
+
+                      }
+
+
+          
+
+
+                      if (clone.scrollWidth > clone.clientWidth + 1) {
+
+
+          
+
+
+                          condensationLevel = 3;
+
+
+          
+
+
+                          clone.classList.add('toolbar-super-condensed');
+
+
+          
+
+
+                          for (const id in mainToolsShort) { clone.querySelector(id).innerText = mainToolsShort[id]; }
+
+
+          
+
+
+                      }
+
+
+          
+
+
+              
+
+
+          
+
+
+                      // --- Apply the final determined state to the REAL toolbar in one go ---
+
+
+          
+
+
+                      toolbar.classList.toggle('toolbar-condensed', condensationLevel >= 1);
+
+
+          
+
+
+                      toolbar.classList.toggle('toolbar-super-condensed', condensationLevel >= 3);
+
+
+          
+
+
+              
+
+
+          
+
+
+                      if (condensationLevel >= 3) {
+
+
+          
+
+
+                          for (const id in mainToolsShort) { el(id).innerText = mainToolsShort[id]; }
+
+
+          
+
+
+                      } else {
+
+
+          
+
+
+                          for (const id in mainToolsFull) { el(id).innerText = mainToolsFull[id]; }
+
+
+          
+
+
+                      }
+
+
+          
+
+
+              
+
+
+          
+
+
+                      const quickColors = el('#quick-stroke-colors');
+
+
+          
+
+
+                      const strokeToolbar = el('#stroke-toolbar');
+
+
+          
+
+
+                      if (quickColors && strokeToolbar && strokeToolbar.style.display !== 'none') {
+
+
+          
+
+
+                          quickColors.style.display = (condensationLevel >= 2) ? 'none' : 'flex';
+
+
+          
+
+
+                      }
+
+
+          
+
+
+              
+
+
+          
+
+
+                      // --- Cleanup ---
+
+
+          
+
+
+                      document.body.removeChild(clone);
+
+
+          
+
+
+              
+
+
+          
+
+
+                  }, 50);
+
+
+          
+
+
+              }
+
+
+  
+
+
+  
+
+
+  
+
+
+      function updateCustomCursor() {
   const customCursor = document.getElementById('custom-cursor');
   if (!customCursor) return;
 
@@ -1899,6 +2347,7 @@ function selectItem(idToSelect, addToSelection = false){
   }
   
   refreshLayers();
+  checkToolbarOverflow();
 }
 
 function clearSelection(){
@@ -1909,6 +2358,7 @@ function clearSelection(){
   el('#image-transparency').style.display = 'none';
   // Hide text toolbar when no text is selected
   const textToolbar = el('#text-toolbar'); if(textToolbar) textToolbar.style.display = 'none';
+  checkToolbarOverflow();
 }
 
 // Parse a transform string to extract the first translate(tx,ty) if present.
