@@ -3562,6 +3562,8 @@ async function exportWhiteboard(){
     if (!g) return;
     
     const transform = g.getAttribute('transform') || '';
+    const left = parseFloat(svgWrapper.style.left) || 0;
+    const top = parseFloat(svgWrapper.style.top) || 0;
     
     const paths = [];
     let g_color = '#111', g_width = 2, arrowSize = null;
@@ -3593,7 +3595,7 @@ async function exportWhiteboard(){
     // Save transform to reposition the stroke on import
     // Make sure transform is never null or "null" string
     const transformToSave = (transform && transform !== 'null' && typeof transform === 'string' && transform.trim()) ? transform : '';
-    items.push({ id: svgWrapper.dataset.id, type: 'stroke-group', z: parseInt(svgWrapper.style.zIndex||0)||0, transform: transformToSave, paths, markers, color: g_color, width: g_width });
+    items.push({ id: svgWrapper.dataset.id, type: 'stroke-group', z: parseInt(svgWrapper.style.zIndex||0)||0, transform: transformToSave, paths, markers, color: g_color, width: g_width, left, top });
   });
 
   // Prepare a sanitized copy of state for serialization (convert Set to array, keep primitives)
@@ -3689,6 +3691,8 @@ async function importWhiteboard(file) {
         svgWrapper.dataset.type = 'stroke-group';
         svgWrapper.dataset.imported = 'true';
         svgWrapper.style.zIndex = it.z;
+        if (it.left) svgWrapper.style.left = it.left + 'px';
+        if (it.top) svgWrapper.style.top = it.top + 'px';
         board.appendChild(svgWrapper);
 
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
