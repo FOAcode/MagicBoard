@@ -885,8 +885,8 @@ function finalizeStrokeGroup() {
 function createSnapshot() {
   const items = [];
 
-  // --- Capture images & text
-  board.querySelectorAll('.item:not([data-imported])').forEach(n => {
+  // --- Capture images & text (Removed :not([data-imported]) exclusion)
+  board.querySelectorAll('.item').forEach(n => {
     // Read from computed style if inline style is empty, to ensure we get the current position
     const computedStyle = window.getComputedStyle(n);
     const left = n.style.left || computedStyle.left || '0px';
@@ -938,8 +938,8 @@ function createSnapshot() {
     items.push(obj);
   });
 
-  // --- Capture strokes (each as individual item)
-  board.querySelectorAll('.stroke-wrapper:not([data-imported])').forEach(svgWrapper => {
+  // --- Capture strokes (Removed :not([data-imported]) exclusion)
+  board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
     const g = svgWrapper.querySelector('g');
     if (!g) return;
 
@@ -978,13 +978,12 @@ function createSnapshot() {
   };
 }
 
-
 function restoreSnapshot(snapshot) {
   if (!snapshot) return;
   isRestoringHistory = true;
 
-  // Clear existing items (but not imported items and not board background)
-  const existingItems = board.querySelectorAll('.item:not([data-imported]), .stroke-wrapper:not([data-imported])');
+  // Clear existing items (including previously imported ones)
+  const existingItems = board.querySelectorAll('.item, .stroke-wrapper');
   existingItems.forEach(n => {
     try {
       n.remove();
@@ -1040,13 +1039,9 @@ function restoreSnapshot(snapshot) {
         p.style.textDecoration = it.style.underline ? 'underline' : 'none';
         p.style.textAlign = it.style.textAlign || 'left';
 
-        // --- FIX STARTS HERE ---
-        // We MUST call fitText here to restore the "white-space: pre-wrap" 
-        // and re-calculate the fit based on the restored dimensions.
         if (typeof fitText === 'function') {
            fitText(p, w, h);
         }
-        // --- FIX ENDS HERE ---
       }
     }
 
@@ -3662,11 +3657,13 @@ async function importWhiteboard(file) {
           opacity: it.opacity !== undefined ? it.opacity : 1
         });
         item.style.zIndex = it.z;
-        item.dataset.imported = 'true';
+        // FIX: Explicitly set height immediately so the first snapshot captures it correctly
+        if (it.height && it.height > 0) {
+            item.style.height = it.height + 'px';
+        }
       } else if (it.type === 'text') {
         const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
         item.style.zIndex = it.z;
-        item.dataset.imported = 'true';
         if (it.width) item.style.width = it.width + 'px';
         if (it.height) item.style.height = it.height + 'px';
 
@@ -3689,7 +3686,6 @@ async function importWhiteboard(file) {
         svgWrapper.classList.add('stroke-wrapper');
         svgWrapper.dataset.id = it.id;
         svgWrapper.dataset.type = 'stroke-group';
-        svgWrapper.dataset.imported = 'true';
         svgWrapper.style.zIndex = it.z;
         if (it.left) svgWrapper.style.left = it.left + 'px';
         if (it.top) svgWrapper.style.top = it.top + 'px';
