@@ -7,6 +7,7 @@
 <title>MagicBoard</title>
 <link rel="icon" href="./icon.png" type="image/png" />
 <link rel="manifest" href="./manifest.json" />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap" rel="stylesheet" />
 <script src="libraries/jszip.min.js"></script>
 <script src="libraries/html2canvas.min.js"></script>
 <style>
@@ -688,6 +689,18 @@
       </button>
     </div>
     <div class="popup-row">
+      <label for="text-font-family">Font</label>
+      <select id="text-font-family" style="flex-grow: 1; max-width: 130px; padding: 4px; border-radius: 4px; border: 1px solid #ddd; font-size: 13px;">
+        <option value="inherit">Default</option>
+        <option value="'Open Sans', sans-serif">Open Sans</option>
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="'Times New Roman', serif">Times New Roman</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="'Courier New', monospace">Courier New</option>
+        <option value="Verdana, sans-serif">Verdana</option>
+      </select>
+    </div>
+    <div class="popup-row">
       <label for="text-color">Color</label>
       <input type="color" id="text-color">
     </div>
@@ -787,7 +800,8 @@ let state = {
     color: '#111111',
     bgColor: '#ffffff',
     bgAlpha: 0.0,
-    align: 'center'
+    align: 'center',
+    fontFamily: 'inherit'
   }
 };
 
@@ -933,7 +947,8 @@ function createSnapshot() {
         underline: p?.style.textDecoration.includes('underline'),
         color: p?.style.color || null,
         backgroundColor: p?.style.backgroundColor || null,
-        textAlign: p?.style.textAlign || 'left'
+        textAlign: p?.style.textAlign || 'left',
+        fontFamily: p?.style.fontFamily || 'inherit'
       };
     }
 
@@ -1040,6 +1055,7 @@ function restoreSnapshot(snapshot) {
         p.style.fontStyle = it.style.italic ? 'italic' : 'normal';
         p.style.textDecoration = it.style.underline ? 'underline' : 'none';
         p.style.textAlign = it.style.textAlign || 'left';
+        p.style.fontFamily = it.style.fontFamily || 'inherit';
 
         if (typeof fitText === 'function') {
            fitText(p, w, h);
@@ -1976,6 +1992,9 @@ function createTextItem(text='', x=100, y=100, options = {}){
   p.style.textDecoration = td.length ? td.join(' ') : 'none';
   p.style.textAlign = state.text.align;
   p.style.fontSize = (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize || '16px');
+  p.style.fontFamily = state.text.fontFamily || 'inherit';
+  // Store fontFamily in data attribute for reliable retrieval
+  wrapper.dataset.fontFamily = state.text.fontFamily || 'inherit';
   p.style.color = state.text.color;
 const rgb = hexToRgbCached(state.text.bgColor);
   p.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
@@ -2320,9 +2339,8 @@ function selectItem(idToSelect, addToSelection = false){
     state.text.bgColor = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
     state.text.bgAlpha = bgRgb.a;
     state.text.align = styles.textAlign || 'left';
-
-    updateTextPopupUI();
-    state.text.align = styles.textAlign || 'left';
+    // Read fontFamily from data attribute (more reliable than computed style)
+    state.text.fontFamily = node.dataset.fontFamily || textDiv.style.fontFamily || 'inherit';
 
     updateTextPopupUI();
   }
@@ -3570,7 +3588,8 @@ async function exportWhiteboard(){
         color: p.style.color || computedStyle.color,
         backgroundColor: p.style.backgroundColor || computedStyle.backgroundColor,
         fontSize: p.style.fontSize || computedStyle.fontSize,
-        textAlign: p.style.textAlign || computedStyle.textAlign
+        textAlign: p.style.textAlign || computedStyle.textAlign,
+        fontFamily: p.style.fontFamily || 'inherit'
       };
     }
 
@@ -3704,6 +3723,7 @@ async function importWhiteboard(file) {
           if (it.style.color) p.style.color = it.style.color;
           if (it.style.backgroundColor) p.style.backgroundColor = it.style.backgroundColor;
           if (it.style.textAlign) p.style.textAlign = it.style.textAlign;
+          if (it.style.fontFamily) p.style.fontFamily = it.style.fontFamily;
         }
         fitText(p, it.width, it.height);
 
@@ -4531,6 +4551,18 @@ function updateTextPopupUI() {
   if (textBgAlphaInput.value !== state.text.bgAlpha) textBgAlphaInput.value = state.text.bgAlpha;
   const alphaLabel = parseFloat(state.text.bgAlpha).toFixed(2);
   if (textBgAlphaLabel.innerText !== alphaLabel) textBgAlphaLabel.innerText = alphaLabel;
+  
+  // Sync font family dropdown - ensure value matches an option
+  if (textFontFamilySelect) {
+    const fontValue = state.text.fontFamily || 'inherit';
+    if (textFontFamilySelect.value !== fontValue) {
+      textFontFamilySelect.value = fontValue;
+    }
+    // If value still doesn't match (no matching option), highlight first option
+    if (!textFontFamilySelect.value || textFontFamilySelect.value !== fontValue) {
+      textFontFamilySelect.selectedIndex = 0;
+    }
+  }
 }
 
 
@@ -4557,6 +4589,10 @@ function applyTextSettingsToSelection() {
       if (textDiv.style.color !== state.text.color) textDiv.style.color = state.text.color;
       if (textDiv.style.backgroundColor !== bgColorString) textDiv.style.backgroundColor = bgColorString;
       if (textDiv.style.textAlign !== state.text.align) textDiv.style.textAlign = state.text.align;
+      const fontFamilyValue = state.text.fontFamily || 'inherit';
+      if (textDiv.style.fontFamily !== fontFamilyValue) textDiv.style.fontFamily = fontFamilyValue;
+      // Update data attribute to track font family
+      if (node.dataset.fontFamily !== fontFamilyValue) node.dataset.fontFamily = fontFamilyValue;
     }
   });
   pushHistory();
@@ -4611,6 +4647,16 @@ textBgColorInput.addEventListener('input', (e) => {
   state.text.bgColor = e.target.value;
   applyTextSettingsToSelection();
 });
+
+// Font family selector
+const textFontFamilySelect = el('#text-font-family');
+if (textFontFamilySelect) {
+  textFontFamilySelect.addEventListener('change', (e) => {
+    state.text.fontFamily = e.target.value;
+    applyTextSettingsToSelection();
+  });
+}
+
 if(textBgAlphaInput){
   textBgAlphaInput.addEventListener('pointerdown', ()=>{ startSliderHistory(); });
   textBgAlphaInput.addEventListener('input', (e) => {
