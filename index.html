@@ -1118,41 +1118,34 @@ function updateUndoRedoButtons(){
   if(redoBtn) redoBtn.disabled = redoStack.length === 0;
 }
 
+function snapshotItemsEqual(items1, items2) {
+  if (!items1 || !items2 || items1.length !== items2.length) return false;
+  
+  for (let i = 0; i < items1.length; i++) {
+    const a = items1[i];
+    const b = items2[i];
+    // Quick reference check for same object
+    if (a === b) continue;
+    // Compare key fields without full deep comparison
+    if (a.id !== b.id || a.type !== b.type || a.z !== b.z) return false;
+    if (a.left !== b.left || a.top !== b.top) return false;
+    if (a.width !== b.width || a.height !== b.height) return false;
+    if (a.d !== b.d || a.stroke !== b.stroke) return false;
+    if (a.text !== b.text || a.transform !== b.transform) return false;
+  }
+  return true;
+}
+
 function pushHistory() {
   if (isRestoringHistory) return;
   
   const snap = createSnapshot();
   const last = undoStack[undoStack.length - 1];
 
-  if (last) {
-    try {
-      /**
-       * To decide if we should save a new undo step, we compare the current 
-       * state to the last one. We ignore the 'date' property because it 
-       * changes every time a snapshot is created.
-       */
-      const stripForCompare = (snapshot) => {
-        // We create a deep-ish copy and nullify the date
-        const copy = { 
-          ...snapshot, 
-          date: null,
-          // Map through items to ensure we are comparing their current properties
-          items: snapshot.items.map(it => ({ ...it })) 
-        };
-        return copy;
-      };
-
-      const lastForCompare = JSON.stringify(stripForCompare(last));
-      const snapForCompare = JSON.stringify(stripForCompare(snap));
-
-      // If nothing has actually changed (except the timestamp), don't waste memory
-      if (lastForCompare === snapForCompare) {
-        updateUndoRedoButtons();
-        return;
-      }
-    } catch (e) {
-      console.error("History comparison failed, pushing anyway.", e);
-    }
+  if (last && snapshotItemsEqual(last.items, snap.items)) {
+    // Items haven't changed, don't push
+    updateUndoRedoButtons();
+    return;
   }
 
   // Push the new state to the stack
@@ -1982,7 +1975,7 @@ function createTextItem(text='', x=100, y=100, options = {}){
   p.style.textAlign = state.text.align;
   p.style.fontSize = (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize || '16px');
   p.style.color = state.text.color;
-  const rgb = hexToRgb(state.text.bgColor);
+const rgb = hexToRgbCached(state.text.bgColor);
   p.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
   
   wrapper.appendChild(p);
@@ -2269,17 +2262,17 @@ function selectItem(idToSelect, addToSelection = false){
   const transparencyDiv = el('#image-transparency');
   const transparencySlider = el('#transparency-slider');
   if (node.dataset.type === 'image' && !addToSelection) {
-    transparencyDiv.style.display = 'flex';
+    if (transparencyDiv.style.display !== 'flex') transparencyDiv.style.display = 'flex';
     // Get current opacity or default to 100
     const img = node.querySelector('img');
     const opacity = img ? parseFloat(img.style.opacity || '1') * 100 : 100;
-    transparencySlider.value = opacity;
+    if (transparencySlider.value !== opacity) transparencySlider.value = opacity;
     el('#transparency-value').textContent = Math.round(opacity) + '%';
   } else if (!addToSelection || !Array.from(state.selectedIds).some(id => {
     const n = findNodeById(id);
     return n && n.dataset.type === 'image';
   })) {
-    transparencyDiv.style.display = 'none';
+    if (transparencyDiv.style.display !== 'none') transparencyDiv.style.display = 'none';
   }
   // --- MODIFIED: Handle handle creation only for HTML items ---
   if(node.dataset.type === 'image'){
@@ -2346,13 +2339,20 @@ function selectItem(idToSelect, addToSelection = false){
 }
 
 function clearSelection(){
-  // --- MODIFIED: Selects .item, .stroke-wrapper and individual .stroke ---
-  board.querySelectorAll('.item.selected, .stroke-wrapper.selected, .stroke.selected').forEach(n=>n.classList.remove('selected'));
+  // --- Cache selectors to avoid repeated querySelectorAll ---
+  const selectedElements = board.querySelectorAll('.item.selected, .stroke-wrapper.selected, .stroke.selected');
+  selectedElements.forEach(n=>{
+    if (n.classList.contains('selected')) {
+      n.classList.remove('selected');
+    }
+  });
   state.selectedIds.clear();
   // Hide transparency slider when no images are selected
-  el('#image-transparency').style.display = 'none';
+  const transparencyDiv = el('#image-transparency');
+  if (transparencyDiv.style.display !== 'none') transparencyDiv.style.display = 'none';
   // Hide text toolbar when no text is selected
-  const textToolbar = el('#text-toolbar'); if(textToolbar) textToolbar.style.display = 'none';
+  const textToolbar = el('#text-toolbar');
+  if(textToolbar && textToolbar.style.display !== 'none') textToolbar.style.display = 'none';
   checkToolbarOverflow();
 }
 
@@ -2741,11 +2741,15 @@ function onPointerUp(e) {
 }
 
 
+// Optimized debounce with tracking
 function debounce(func, wait) {
   let timeout;
+  let lastThis, lastArgs;
   return function(...args) {
+    lastThis = this;
+    lastArgs = args;
     clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
+    timeout = setTimeout(() => func.apply(lastThis, lastArgs), wait);
   };
 }
 
@@ -2793,6 +2797,26 @@ function fitText(textDiv, containerWidth, containerHeight) {
 
 
 const updateFontSizeDebounced = debounce(fitText, 100);
+
+// Cache for color conversions to reduce repeated calculations
+const colorCache = new Map();
+
+function hexToRgbCached(hex) {
+  if (!colorCache.has(hex)) {
+    let r = 0, g = 0, b = 0;
+    if (hex.length === 4) {
+      r = parseInt(hex[1] + hex[1], 16);
+      g = parseInt(hex[2] + hex[2], 16);
+      b = parseInt(hex[3] + hex[3], 16);
+    } else if (hex.length === 7) {
+      r = parseInt(hex[1] + hex[2], 16);
+      g = parseInt(hex[3] + hex[4], 16);
+      b = parseInt(hex[5] + hex[6], 16);
+    }
+    colorCache.set(hex, { r, g, b });
+  }
+  return colorCache.get(hex);
+}
 
 /* Resizing logic for HTML items. When resizing images, we also update the pixelation level to keep it crisp. When resizing text boxes, we adjust the font size to fit the new dimensions. The resize handle is a small div in the corner of the item, and dragging it adjusts the width and height of the item. For images, we maintain aspect ratio. For text, we allow free resizing but adjust font size to fit.
 */
@@ -4223,21 +4247,38 @@ const quickEndArrow = el('#quick-end-arrow'); // <-- NEW: Quick arrow ref
 
 function updateToolbarStrokeUI(){
   if(!toolbarStroke) return;
-  toolbarStrokeSlider.value = state.stroke.width;
-  toolbarStrokeValue.textContent = parseFloat(state.stroke.width).toFixed(1);
+  if (toolbarStrokeSlider.value !== state.stroke.width) toolbarStrokeSlider.value = state.stroke.width;
+  const widthStr = parseFloat(state.stroke.width).toFixed(1);
+  if (toolbarStrokeValue.textContent !== widthStr) toolbarStrokeValue.textContent = widthStr;
   const line = toolbarStrokePreview.querySelector('line');
-  if(line){ line.setAttribute('stroke-width', state.stroke.width); line.setAttribute('stroke', state.stroke.color); }
+  if(line){
+    const currentWidth = line.getAttribute('stroke-width');
+    const currentColor = line.getAttribute('stroke');
+    if (currentWidth !== state.stroke.width) line.setAttribute('stroke-width', state.stroke.width);
+    if (currentColor !== state.stroke.color) line.setAttribute('stroke', state.stroke.color);
+  }
   // update active color button
   if(quickStrokeColors){
     quickStrokeColors.querySelectorAll('button').forEach(b=>{
-      b.classList.toggle('active', b.dataset.color === state.stroke.color);
+      const isActive = b.dataset.color === state.stroke.color;
+      if (b.classList.contains('active') !== isActive) {
+        b.classList.toggle('active', isActive);
+      }
       // add subtle outline when active
-      b.style.boxShadow = b.classList.contains('active') ? 'inset 0 0 0 2px rgba(255,255,255,0.12)' : '';
+      b.style.boxShadow = isActive ? 'inset 0 0 0 2px rgba(255,255,255,0.12)' : '';
     });
   }
   // <-- NEW: Sync quick arrow checkbox -->
-  if(quickStartArrow) quickStartArrow.classList.toggle('active', state.stroke.startArrow);
-  if(quickEndArrow) quickEndArrow.classList.toggle('active', state.stroke.endArrow);
+  if(quickStartArrow) {
+    if (quickStartArrow.classList.contains('active') !== state.stroke.startArrow) {
+      quickStartArrow.classList.toggle('active', state.stroke.startArrow);
+    }
+  }
+  if(quickEndArrow) {
+    if (quickEndArrow.classList.contains('active') !== state.stroke.endArrow) {
+      quickEndArrow.classList.toggle('active', state.stroke.endArrow);
+    }
+  }
 }
 
 // --- Text toolbar wiring ---
@@ -4250,17 +4291,26 @@ function updateToolbarTextUI(){
   if(!toolbarText) return;
   // bg alpha
   const a = (typeof state.text.bgAlpha === 'number') ? state.text.bgAlpha : 0;
-  if(toolbarTextBgAlpha) toolbarTextBgAlpha.value = a;
-  if(toolbarTextBgAlphaValue) toolbarTextBgAlphaValue.textContent = parseFloat(a).toFixed(2);
+  if(toolbarTextBgAlpha && toolbarTextBgAlpha.value !== a) toolbarTextBgAlpha.value = a;
+  const alphaStr = parseFloat(a).toFixed(2);
+  if(toolbarTextBgAlphaValue && toolbarTextBgAlphaValue.textContent !== alphaStr) toolbarTextBgAlphaValue.textContent = alphaStr;
   // styles
   if(quickTextStyles){
     quickTextStyles.querySelectorAll('button').forEach(b=>{
-      if(b.id === 'tb-text-bold') b.classList.toggle('active', state.text.bold);
-      if(b.id === 'tb-text-italic') b.classList.toggle('active', state.text.italic);
-      if(b.id === 'tb-text-underline') b.classList.toggle('active', state.text.underline);
-      if(b.id === 'tb-text-crossed') b.classList.toggle('active', state.text.crossed);
+      let shouldBeActive = false;
+      if(b.id === 'tb-text-bold') shouldBeActive = state.text.bold;
+      else if(b.id === 'tb-text-italic') shouldBeActive = state.text.italic;
+      else if(b.id === 'tb-text-underline') shouldBeActive = state.text.underline;
+      else if(b.id === 'tb-text-crossed') shouldBeActive = state.text.crossed;
+      
+      if (b.classList.contains('active') !== shouldBeActive) {
+        b.classList.toggle('active', shouldBeActive);
+      }
       // set aria-pressed for accessibility
-      b.setAttribute('aria-pressed', b.classList.contains('active') ? 'true' : 'false');
+      const ariaVal = shouldBeActive ? 'true' : 'false';
+      if (b.getAttribute('aria-pressed') !== ariaVal) {
+        b.setAttribute('aria-pressed', ariaVal);
+      }
     });
   }
 }
@@ -4453,48 +4503,58 @@ textSettingsBtn.addEventListener('click', (e) => {
 
 // Update text popup buttons based on current state (called when opening popup and when state changes via toolbar)
 function updateTextPopupUI() {
-  textBoldBtn.classList.toggle('active', state.text.bold);
-  textItalicBtn.classList.toggle('active', state.text.italic);
-  textUnderlineBtn.classList.toggle('active', state.text.underline);
+  if (textBoldBtn.classList.contains('active') !== state.text.bold) textBoldBtn.classList.toggle('active', state.text.bold);
+  if (textItalicBtn.classList.contains('active') !== state.text.italic) textItalicBtn.classList.toggle('active', state.text.italic);
+  if (textUnderlineBtn.classList.contains('active') !== state.text.underline) textUnderlineBtn.classList.toggle('active', state.text.underline);
   // crossed/strikethrough
-  const textCrossedBtn = el('#text-crossed'); if(textCrossedBtn) textCrossedBtn.classList.toggle('active', state.text.crossed);
+  const textCrossedBtn = el('#text-crossed');
+  if(textCrossedBtn && textCrossedBtn.classList.contains('active') !== state.text.crossed) {
+    textCrossedBtn.classList.toggle('active', state.text.crossed);
+  }
   
   // --- NEW: Handle alignment buttons ---
   const alignBtns = textPopup.querySelectorAll('[data-align]');
   alignBtns.forEach(btn => {
-    btn.classList.toggle('active', state.text.align === btn.dataset.align);
+    const shouldBeActive = state.text.align === btn.dataset.align;
+    if (btn.classList.contains('active') !== shouldBeActive) {
+      btn.classList.toggle('active', shouldBeActive);
+    }
   });
 
   // sync toolbar if present
   try{ updateToolbarTextUI(); }catch(e){}
   
-  textColorInput.value = state.text.color;
-  textBgColorInput.value = state.text.bgColor;
-  textBgAlphaInput.value = state.text.bgAlpha;
-  textBgAlphaLabel.innerText = parseFloat(state.text.bgAlpha).toFixed(2);
+  if (textColorInput.value !== state.text.color) textColorInput.value = state.text.color;
+  if (textBgColorInput.value !== state.text.bgColor) textBgColorInput.value = state.text.bgColor;
+  if (textBgAlphaInput.value !== state.text.bgAlpha) textBgAlphaInput.value = state.text.bgAlpha;
+  const alphaLabel = parseFloat(state.text.bgAlpha).toFixed(2);
+  if (textBgAlphaLabel.innerText !== alphaLabel) textBgAlphaLabel.innerText = alphaLabel;
 }
 
 
 // Apply current text settings to all selected text items
 function applyTextSettingsToSelection() {
-  const rgb = hexToRgb(state.text.bgColor);
+  const rgb = hexToRgbCached(state.text.bgColor);
   const bgColorString = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
 
   state.selectedIds.forEach(id => {
     const node = findNodeById(id);
     if (node && node.dataset.type === 'text') {
       const textDiv = node.querySelector('.text-item');
-      textDiv.style.fontWeight = state.text.bold ? 'bold' : 'normal';
-      textDiv.style.fontStyle = state.text.italic ? 'italic' : 'normal';
+      const boldStyle = state.text.bold ? 'bold' : 'normal';
+      const italicStyle = state.text.italic ? 'italic' : 'normal';
       const dec = [];
       if(state.text.underline) dec.push('underline');
       if(state.text.crossed) dec.push('line-through');
-      textDiv.style.textDecoration = dec.length ? dec.join(' ') : 'none';
-      textDiv.style.color = state.text.color;
-      textDiv.style.backgroundColor = bgColorString;
-      textDiv.style.textAlign = state.text.align;
-
-
+      const decorationStyle = dec.length ? dec.join(' ') : 'none';
+      
+      // Batch style updates to reduce reflows
+      if (textDiv.style.fontWeight !== boldStyle) textDiv.style.fontWeight = boldStyle;
+      if (textDiv.style.fontStyle !== italicStyle) textDiv.style.fontStyle = italicStyle;
+      if (textDiv.style.textDecoration !== decorationStyle) textDiv.style.textDecoration = decorationStyle;
+      if (textDiv.style.color !== state.text.color) textDiv.style.color = state.text.color;
+      if (textDiv.style.backgroundColor !== bgColorString) textDiv.style.backgroundColor = bgColorString;
+      if (textDiv.style.textAlign !== state.text.align) textDiv.style.textAlign = state.text.align;
     }
   });
   pushHistory();
@@ -4652,15 +4712,21 @@ function scheduleExtensionDetection(){
       hideKnownTranslateUI();
     }
   }catch(e){}
+  // Only check a few times (3 checks at 2-second intervals = 6 seconds total)
   let checks = 0;
-  const id = setInterval(()=>{
+  const maxChecks = 3;
+  const timerId = setInterval(()=>{
+    if (checks++ >= maxChecks) {
+      clearInterval(timerId);
+      return;
+    }
     try{
-      checks++;
       if (detectTranslateExtension()) {
-        showExtensionWarning(); hideKnownTranslateUI();
+        showExtensionWarning();
+        hideKnownTranslateUI();
+        clearInterval(timerId);
       }
-      if (checks > 10) clearInterval(id);
-    }catch(e){ if (checks > 10) clearInterval(id); }
+    }catch(e){}
   }, 2000);
 }
 
@@ -4670,7 +4736,7 @@ function getActionNodeById(id) {
 }
 function getZ(node){ return (node ? parseInt(node.style.zIndex || 0) : 0); }
 function setZ(node, z){
-  if(!node) return;
+  if(!node || node.style.zIndex === z) return;
   node.style.zIndex = z;
 }
 
