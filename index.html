@@ -20,44 +20,63 @@
   body{display:flex;flex-direction:column;background:var(--bg);color:#111;}
   .toolbar{
     height:var(--toolbar-h);
-    display:flex;align-items:center;gap:8px;
-    padding: 4px 12px;
-    background:#fff;border-bottom:1px solid #e6e9ef;
-    box-shadow:0 1px 0 rgba(16,24,40,0.02);
+    display:flex;align-items:center;gap:12px;
+    padding: 6px 16px;
+    background: linear-gradient(180deg, #fafbfc 0%, #f8f9fa 100%);
+    border-bottom: 1px solid #e5e7eb;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
     box-sizing: border-box;
   }
   .tool-btn{
     display:inline-flex;align-items:center;gap:8px;
-    padding: 4px 8px;
-    border-radius:8px;border:1px solid transparent;
-    cursor:pointer;background:transparent;font-weight:600;color:#2c3e50;
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    background: transparent;
+    font-weight: 500;
+    font-size: 13px;
+    color: #374151;
+    transition: all 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .tool-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.08);
+    color: #1f2937;
+  }
+  
+  .tool-btn:active:not(:disabled) {
+    background: rgba(0, 0, 0, 0.08);
   }
 
   /* Modernized Undo / Redo buttons */
   #undo-btn, #redo-btn {
-    padding: 4px 6px;
-    border-radius: 6px;
+    padding: 5px 8px;
+    border-radius: 7px;
     border: 1px solid transparent;
-    transition: all 150ms ease;
+    transition: all 120ms cubic-bezier(0.4, 0, 0.2, 1);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     cursor: pointer;
     flex-shrink: 0;
+    color: #374151;
   }
 
   #undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled) {
-    background: rgba(0,0,0,0.08);
-    border-color: rgba(0,0,0,0.15);
+    background: rgba(0,0,0,0.05);
+    border-color: rgba(0,0,0,0.08);
+    color: #1f2937;
   }
 
   #undo-btn:active:not(:disabled), #redo-btn:active:not(:disabled) {
-    background: rgba(0,0,0,0.12);
+    background: rgba(0,0,0,0.08);
   }
 
   #undo-btn:disabled, #redo-btn:disabled {
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: not-allowed;
   }
 
@@ -71,45 +90,80 @@
   }
 
   /* Icon-only toolbar buttons (compact square) */
-  .tool-btn.icon-only{ padding:6px; width:36px; height:32px; justify-content:center; }
-  .tool-btn.icon-only svg{ width:18px;height:18px; display:block }
+  .tool-btn.icon-only { 
+    padding: 5px 6px; 
+    width: 34px; 
+    height: 32px; 
+    justify-content: center; 
+  }
+  .tool-btn.icon-only svg { 
+    width: 18px; 
+    height: 18px; 
+    display: block; 
+  }
 
   /* Text toolbar quick buttons visuals */
   #tb-text-bold{ font-weight:700; }
   #tb-text-italic{ font-style:italic; }
   #tb-text-underline{ text-decoration: underline; text-decoration-thickness: 2px; }
-  .tool-btn.active{background:linear-gradient(180deg,#EEF6FF,#E6F1FF);border-color:#cfe6ff;color:var(--accent);}
-  .tool-btn:hover{background:#f4f7fb}
+  .tool-btn.active {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
+  
+  .tool-btn.active:hover {
+    background: #bfdbfe;
+    border-color: #60a5fa;
+  }
+  
   .toolbar .spacer{flex:1}
   
   .tool-btn-group {
     display: inline-flex;
     align-items: center;
+    gap: 0;
+    padding: 2px;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 7px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
   }
+  
   .tool-btn-group .tool-btn {
     margin: 0;
+    border: none;
+    border-radius: 5px;
+    padding: 5px 8px;
+    background: transparent;
   }
+
   .tool-btn-group .tool-btn:first-child {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right-width: 0.5px;
+    flex: 1;
+    font-weight: bold;
   }
-  .tool-btn-group .tool-btn:last-child {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    border-left-width: 0.5px;
-    padding: 4px 6px;
-  }
-  .tool-btn-group.active .tool-btn {
-    background: linear-gradient(180deg,#EEF6FF,#E6F1FF);
-    border-color: #cfe6ff;
-    color: var(--accent);
-  }
+  
   .tool-btn-group .tool-btn:hover {
-    background: #f4f7fb;
+    background: rgba(0, 0, 0, 0.04);
   }
+  
+  .tool-btn-group.active {
+    background: #dbeafe;
+    border-color: #93c5fd;
+  }
+
+  .tool-btn-group.active .tool-btn {
+    color: #1e40af;
+  }
+  
   .tool-btn-group.active .tool-btn:hover {
-      background: linear-gradient(180deg,#dbe9ff,#d8e7ff);
+    background: rgba(31, 41, 55, 0.1);
+  }
+
+  /* Equal width for primary tool groups */
+  #select-tool-group,
+  #draw-tool-group,
+  #text-tool-group {
+    min-width: 85px;
   }
 
   /* Copied popup notification */
@@ -323,7 +377,29 @@
   .layer-row .meta{display:flex;gap:8px;align-items:center}
   .layer-row .meta .dot{width:12px;height:12px;border-radius:3px;background:#dbeafe;border:1px solid #b6dbff}
   .layer-row .actions{display:flex;gap:6px}
-  .small-btn{padding:6px;border-radius:6px;background:#fff;border:1px solid #e6eefb;cursor:pointer;font-size:12px}
+  .small-btn{
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: #374151;
+    transition: all 120ms ease;
+  }
+  
+  .small-btn:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+    color: #1f2937;
+  }
+  
+  .small-btn.active {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
   
   .layers-footer { display:flex; gap:8px; }
 
@@ -347,23 +423,45 @@
   .hint{font-size:13px;color:#6b7280}
 
   .popup {
-    position:absolute;
+    position: fixed;
     background: #fff;
-    border: 1px solid #e6e9ef;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    border-radius: 8px;
-    padding: 12px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04);
+    border-radius: 10px;
+    padding: 14px;
     z-index: 2000;
-    display: none; /* Hidden by default */
+    display: none;
     width: 220px;
   }
-  .popup h4 { margin: 0 0 12px 0; font-size: 14px; }
-  .popup-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .popup h4 { 
+    margin: 0 0 12px 0; 
+    font-size: 14px; 
+    font-weight: 600;
+    color: #1f2937;
+  }
+  .popup-row { 
+    display: flex; 
+    align-items: center; 
+    justify-content: space-between; 
+    margin-bottom: 10px; 
+  }
   .popup-row:last-child { margin-bottom: 0; }
-  .popup-row label { font-size: 13px; color: #333; }
+  .popup-row label { 
+    font-size: 13px; 
+    font-weight: 500;
+    color: #374151; 
+  }
   .popup-row input[type="range"] { flex: 1; margin: 0 8px; }
-  .popup-row input[type="color"] { border: none; background: none; padding: 0; height: 24px; width: 24px; }
-  .popup-row span { font-size: 13px; min-width: 24px; text-align: right; }
+  .popup-row input[type="color"] { 
+    border: 1px solid #e5e7eb; 
+    background: none; 
+    padding: 2px; 
+    height: 28px; 
+    width: 28px; 
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .popup-row span { font-size: 13px; min-width: 24px; text-align: right; color: #6b7280; }
   
   .popup-row-buttons {
     display: flex;
@@ -386,9 +484,25 @@
   
   .popup-row-buttons .small-btn.active,
   #quick-text-styles .small-btn.active {
-    background: #e6f1ff;
-    border-color: #b2d6ff;
-    color: var(--accent);
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
+
+  /* Modern focus and accessibility states */
+  .tool-btn:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+  
+  button:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+  
+  .tool-btn-group:focus-within .tool-btn:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: -1px;
   }
 
   /* Extension warning banner */
@@ -445,44 +559,45 @@
   #selection-mode-menu {
     position: fixed;
     background: #fff;
-    border: 1px solid #e6e9ef;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    padding: 8px 0;
-    min-width: 150px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04);
+    border-radius: 10px;
+    padding: 6px 0;
+    min-width: 160px;
     z-index: 2000;
     display: none;
   }
 
   .selection-mode-item {
-    padding: 8px 16px;
+    padding: 10px 14px;
     cursor: pointer;
     font-size: 13px;
-    color: #2c3e50;
+    font-weight: 500;
+    color: #374151;
     display: flex;
     align-items: center;
-    gap: 8px;
-    transition: background 150ms ease;
+    gap: 10px;
+    transition: background 100ms ease;
     white-space: nowrap;
   }
 
   .selection-mode-item:hover {
-    background: #f4f7fb;
+    background: #f3f4f6;
   }
 
   .selection-mode-item.active {
-    background: linear-gradient(180deg, #EEF6FF, #E6F1FF);
-    color: var(--accent);
+    background: #dbeafe;
+    color: #1e40af;
     font-weight: 600;
   }
 
   .selection-mode-item::before {
     content: '';
     display: inline-block;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border: 2px solid currentColor;
-    border-radius: 3px;
+    border-radius: 2px;
     flex-shrink: 0;
   }
 
@@ -525,22 +640,24 @@
       </button>
     </div>
     <button id="undo-btn" class="tool-btn" title="Undo (Ctrl+Z)">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M15 18l-6-6 6-6"/>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
+        <path d="M3 7v6h6M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>
       </svg>
     </button>
 
     <button id="redo-btn" class="tool-btn" title="Redo (Ctrl+Y)">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 18l6-6-6-6"/>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
+        <path d="M21 7v6h-6M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"/>
+      </svg>
+    </button>
       </svg>
     </button>
 
     
-    <div id="image-transparency" style="display:none;align-items:center;gap:4px;margin:0 8px;">
-      <label style="font-size:13px">Opacity:</label>
-      <input type="range" id="transparency-slider" min="0" max="100" value="100" style="width:100px">
-      <span id="transparency-value" style="font-size:13px;min-width:32px">100%</span>
+    <div id="image-transparency" style="display:none;align-items:center;gap:8px;margin:0 8px;">
+      <label style="font-size:13px;font-weight:500;color:#374151;">Opacity:</label>
+      <input type="range" id="transparency-slider" min="0" max="100" value="100" style="width:200px">
+      <span id="transparency-value" style="font-size:13px;min-width:40px;color:#6b7280;">100%</span>
     </div>
     
     <div id="stroke-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
@@ -590,53 +707,55 @@
     <div class="spacer"></div>
 
     <div style="display:flex;align-items:center;gap:6px;position:relative;">
-      <button class="tool-btn" id="zoom-reset" title="ReFit (Ctrl+F)">ReFit</button>
+      <button class="tool-btn" id="zoom-reset" title="ReFit (Ctrl+F)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
+          <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0m3 0h12"/>
+        </svg>
+        <span>Fit</span>
+      </button>
       <div style="position:relative;">
         <button class="tool-btn" id="copy-png" title="Copy as PNG">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
           </svg>
+          <span>Copy</span>
         </button>
         <div id="copy-feedback">Copied!</div>
       </div>
     </div>
 
     <button class="tool-btn icon-only" id="bring-forward" title="Bring to Front">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-        <path d="M3 3h10v10H3z" opacity="0.5"/>
-        <path d="M7 7h10v10H7z"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 15h8M8 11h8M6 7h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/>
+        <path d="M10 4h8a2 2 0 0 1 2 2v8"/>
       </svg>
     </button>
 
     <button class="tool-btn icon-only" id="send-back" title="Send to Back">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-        <path d="M7 7h10v10H7z" opacity="0.5"/>
-        <path d="M3 3h10v10H3z"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 9h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2z"/>
+        <path d="M8 5h10a2 2 0 0 1 2 2v10"/>
       </svg>
     </button>
 
     <button class="tool-btn icon-only" id="delete-item" title="Delete selected">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path d="M6 7h12v13H6zM9 4h6l1 2H8l1-2z" fill="currentColor"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M5 6l1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14M10 11v6M14 11v6"/>
       </svg>
     </button>
 
     <button class="tool-btn" id="export-json" title="Export as .wb">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="17 8 12 3 7 8"></polyline>
-        <line x1="12" y1="3" x2="12" y2="15"></line>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v15M19 9l-7 7-7-7"/>
+        <path d="M3 20h18"/>
       </svg>
-      <!-- <span>Export</span> -->
     </button>
     <button class="tool-btn" id="import-json" title="Import from .wb">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="7 12 12 17 17 12"></polyline>
-        <line x1="12" y1="17" x2="12" y2="3"></line>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22V7M5 14l7-7 7 7"/>
+        <path d="M3 4h18"/>
       </svg>
-      <!-- <span>Import</span> -->
     </button>
 
   </div>
