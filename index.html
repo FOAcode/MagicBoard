@@ -107,14 +107,14 @@
   #tb-text-italic{ font-style:italic; }
   #tb-text-underline{ text-decoration: underline; text-decoration-thickness: 2px; }
   .tool-btn.active {
-    background: #2b6cb0;
-    border-color: #1e40af;
-    color: white;
+    background: #ADD8E6;
+    border-color: #7ECCE8;
+    color: #1f2937;
   }
   
   .tool-btn.active:hover {
-    background: #1e40af;
-    border-color: #1e3a8a;
+    background: #87CEEB;
+    border-color: #2c9bcf;
   }
   
   .toolbar .spacer{flex:1}
@@ -144,6 +144,17 @@
   
   .tool-btn-group .tool-btn:hover {
     background: rgba(0, 0, 0, 0.04);
+  }
+
+  .tool-btn-group .tool-btn.active {
+    background: #ADD8E6;
+    border-color: #7ECCE8;
+    color: #1f2937;
+  }
+
+  .tool-btn-group .tool-btn.active:hover {
+    background: #87CEEB;
+    border-color: #2c9bcf;
   }
   
   .tool-btn-group.active {
@@ -1483,6 +1494,14 @@ function setTool(t){
 
   });
 
+  // Hide opacity slider when switching away from select tool
+  const transparencyDiv = el('#image-transparency');
+  if (t !== 'select') {
+    if (transparencyDiv && transparencyDiv.style.display !== 'none') {
+      transparencyDiv.style.display = 'none';
+    }
+  }
+
   const selectGroup = el('#select-tool-group');
   if (t === 'select') {
     selectGroup.classList.add('active');
@@ -1574,13 +1593,13 @@ function setTool(t){
             if (quickColors) {
 
 
-                quickColors.style.display = 'none'; // Initially hide
+                quickColors.style.display = 'flex'; // Show all quick actions together
 
 
             }
 
 
-            setTimeout(() => { try { updateToolbarStrokeUI(); } catch (e) { } }, 0);
+            try { updateToolbarStrokeUI(); } catch (e) { }
 
 
         }
@@ -5292,9 +5311,9 @@ window.addEventListener('keydown', (e)=>{
 
   if (isInputFocused) return;
   if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
-  if(e.key === 's') setTool('select');
-  if(e.key === 'd') setTool('draw');
-  if(e.key === 't') setTool('text');
+  if(e.key === 's') { document.activeElement?.blur(); setTool('select'); }
+  if(e.key === 'd') { document.activeElement?.blur(); setTool('draw'); }
+  if(e.key === 't') { document.activeElement?.blur(); setTool('text'); }
   // Refit keyboard shortcut
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f'){
     e.preventDefault(); refitToContent();
