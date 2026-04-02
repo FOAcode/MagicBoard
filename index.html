@@ -440,11 +440,71 @@
     min-width: 38px;
     width: 38px;
   }
+
+  /* Selection mode menu styles */
+  #selection-mode-menu {
+    position: fixed;
+    background: #fff;
+    border: 1px solid #e6e9ef;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    padding: 8px 0;
+    min-width: 150px;
+    z-index: 2000;
+    display: none;
+  }
+
+  .selection-mode-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #2c3e50;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 150ms ease;
+    white-space: nowrap;
+  }
+
+  .selection-mode-item:hover {
+    background: #f4f7fb;
+  }
+
+  .selection-mode-item.active {
+    background: linear-gradient(180deg, #EEF6FF, #E6F1FF);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .selection-mode-item::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .selection-mode-item.lasso::before {
+    border-radius: 50%;
+  }
 </style>
 </head>
 <body>
   <div class="toolbar" role="toolbar" aria-label="tools">
-    <button class="tool-btn active" data-tool="select" id="tool-select" title="Select (V)">Select</button>
+    <div class="tool-btn-group" id="select-tool-group">
+      <button class="tool-btn" data-tool="select" id="tool-select" title="Select (V)">Select</button>
+      <button class="tool-btn" id="select-mode-btn" title="Selection mode" aria-haspopup="true" aria-expanded="false">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2 4l4 4 4-4z" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+    <div id="selection-mode-menu">
+      <div class="selection-mode-item rectangular active" data-mode="rectangular">Rectangular</div>
+      <div class="selection-mode-item lasso" data-mode="lasso">Lasso</div>
+    </div>
     
     <div class="tool-btn-group" id="draw-tool-group">
       <button class="tool-btn" data-tool="draw" id="tool-draw" title="Draw (D)">Draw</button>
@@ -776,6 +836,7 @@ const Z_FLOOR = 1;
 
 let state = {
   tool: 'select',
+  selectionMode: 'rectangular', // 'rectangular' or 'lasso'
   selectedIds: new Set(),
   pointer: {x:0,y:0},
   scale: 1,
@@ -808,6 +869,10 @@ let currentSvgWrapper = null; // --- NEW: This is the <svg> wrapper ---
 let isLassoing = false;
 let lassoPoints = [];
 let lassoPath = null;
+let isSelectingRect = false; // For rectangular selection
+let rectSelectStartX = 0;
+let rectSelectStartY = 0;
+let rectSelectPath = null; // SVG path for displaying the rectangle
 let straightLineState = null; // For polyline drawing
 
 /* History (undo/redo) */
@@ -1123,6 +1188,7 @@ function restoreSnapshot(snapshot) {
   }
 
   applyScale();
+  updateSelectionModeUI();
   refreshLayers();
   isRestoringHistory = false;
 }
@@ -1263,9 +1329,12 @@ function setTool(t){
 
   });
 
-
-
-
+  const selectGroup = el('#select-tool-group');
+  if (t === 'select') {
+    selectGroup.classList.add('active');
+  } else {
+    selectGroup.classList.remove('active');
+  }
 
   const drawGroup = el('#draw-tool-group');
 
@@ -3076,15 +3145,35 @@ function onBoardPointerDown(e) {
     const clickedOnItem = e.target.closest('.item, .stroke-wrapper, .stroke, .stroke-hit');
 
     if (!clickedOnItem && state.tool === 'select') {
-      isLassoing = true;
-      lassoPoints = [{ x, y }];
-      lassoPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      lassoPath.setAttribute('d', `M ${x} ${y}`);
-      lassoPath.classList.add('lasso-path');
-      el('#guide-layer').appendChild(lassoPath);
-      clearSelection();
-      refreshLayers();
-      board.setPointerCapture?.(e.pointerId);
+      if (state.selectionMode === 'lasso') {
+        isLassoing = true;
+        lassoPoints = [{ x, y }];
+        lassoPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        lassoPath.setAttribute('d', `M ${x} ${y}`);
+        lassoPath.classList.add('lasso-path');
+        el('#guide-layer').appendChild(lassoPath);
+        clearSelection();
+        refreshLayers();
+        board.setPointerCapture?.(e.pointerId);
+      } else {
+        // Rectangular selection mode
+        isSelectingRect = true;
+        rectSelectStartX = x;
+        rectSelectStartY = y;
+        rectSelectPath = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rectSelectPath.setAttribute('fill', 'rgba(43, 108, 176, 0.08)');
+        rectSelectPath.setAttribute('stroke', 'var(--accent)');
+        rectSelectPath.setAttribute('stroke-width', '1.5');
+        rectSelectPath.setAttribute('x', x);
+        rectSelectPath.setAttribute('y', y);
+        rectSelectPath.setAttribute('width', '0');
+        rectSelectPath.setAttribute('height', '0');
+        rectSelectPath.setAttribute('style', 'pointer-events: none;');
+        el('#guide-layer').appendChild(rectSelectPath);
+        clearSelection();
+        refreshLayers();
+        board.setPointerCapture?.(e.pointerId);
+      }
     } else if (!clickedOnItem) {
       clearSelection();
       refreshLayers();
@@ -3098,6 +3187,18 @@ function onBoardPointerMove(e) {
     const x = pt.x, y = pt.y;
     lassoPoints.push({ x, y });
     lassoPath.setAttribute('d', lassoPath.getAttribute('d') + ` L ${x} ${y}`);
+    return;
+  }
+
+  if (isSelectingRect) {
+    const pt = getBoardPointFromEvent(e);
+    const x = pt.x, y = pt.y;
+    const width = x - rectSelectStartX;
+    const height = y - rectSelectStartY;
+    rectSelectPath.setAttribute('x', Math.min(rectSelectStartX, x));
+    rectSelectPath.setAttribute('y', Math.min(rectSelectStartY, y));
+    rectSelectPath.setAttribute('width', Math.abs(width));
+    rectSelectPath.setAttribute('height', Math.abs(height));
     return;
   }
 
@@ -3255,6 +3356,46 @@ function onBoardPointerUp(e){
       }
     });
     lassoPoints = [];
+    refreshLayers();
+    try { board.releasePointerCapture?.(e.pointerId); } catch(err) {}
+  }
+
+  if (isSelectingRect) {
+    isSelectingRect = false;
+    didDrawOrLasso = true;
+    rectSelectPath.remove();
+    rectSelectPath = null;
+    const boardRect = board.getBoundingClientRect();
+
+    // Calculate actual rect bounds
+    const minX = Math.min(rectSelectStartX, x);
+    const maxX = Math.max(rectSelectStartX, x);
+    const minY = Math.min(rectSelectStartY, y);
+    const maxY = Math.max(rectSelectStartY, y);
+
+    const allItems = board.querySelectorAll('.item');
+    clearSelection();
+    allItems.forEach(node => {
+      const type = node.dataset.type;
+      if (type !== 'image' && type !== 'text') return;
+      const nRect = node.getBoundingClientRect();
+      const itemCenterX = ((nRect.left - boardRect.left) + nRect.width / 2) / state.scale;
+      const itemCenterY = ((nRect.top - boardRect.top) + nRect.height / 2) / state.scale;
+      if (itemCenterX >= minX && itemCenterX <= maxX && itemCenterY >= minY && itemCenterY <= maxY) {
+        state.selectedIds.add(node.dataset.id);
+        node.classList.add('selected');
+      }
+    });
+
+    board.querySelectorAll('path.stroke').forEach(p => {
+      const pRect = p.getBoundingClientRect();
+      const px = ((pRect.left - boardRect.left) + pRect.width / 2) / state.scale;
+      const py = ((pRect.top - boardRect.top) + pRect.height / 2) / state.scale;
+      if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+        state.selectedIds.add(p.dataset.id);
+        p.classList.add('selected');
+      }
+    });
     refreshLayers();
     try { board.releasePointerCapture?.(e.pointerId); } catch(err) {}
   }
@@ -3672,6 +3813,7 @@ async function importWhiteboard(file) {
     // Restore state carefully to avoid replacing runtime objects
     const savedState = data.state || {};
     if (typeof savedState.tool === 'string') state.tool = savedState.tool;
+    if (typeof savedState.selectionMode === 'string') state.selectionMode = savedState.selectionMode;
     if (typeof savedState.scale === 'number') state.scale = savedState.scale;
     if (typeof savedState.nextZ === 'number') state.nextZ = savedState.nextZ;
     state.stroke = Object.assign({}, state.stroke, savedState.stroke || {});
@@ -3790,6 +3932,7 @@ async function importWhiteboard(file) {
     clearSelection();
     refreshLayers();
     setTool('select');
+    updateSelectionModeUI();
     
     // --- ADDED REFIT LOGIC ---
     const hasContent = board.querySelectorAll('.item, .stroke-wrapper').length > 0;
@@ -3840,6 +3983,50 @@ board.addEventListener('pointermove', (e) => {
 document.getElementById('tool-select').addEventListener('click', ()=>setTool('select'));
 document.getElementById('tool-draw').addEventListener('click', ()=>setTool('draw'));
 document.getElementById('tool-text').addEventListener('click', ()=>setTool('text'));
+
+/* Selection mode menu wiring */
+const selectModeBtn = document.getElementById('select-mode-btn');
+const selectionModeMenu = el('#selection-mode-menu');
+const modeItems = document.querySelectorAll('.selection-mode-item');
+
+selectModeBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const rect = selectModeBtn.closest('.tool-btn-group').getBoundingClientRect();
+  selectionModeMenu.style.left = rect.left + 'px';
+  selectionModeMenu.style.top = rect.bottom + 4 + 'px';
+  selectionModeMenu.style.display = (selectionModeMenu.style.display === 'block') ? 'none' : 'block';
+  selectModeBtn.setAttribute('aria-expanded', selectionModeMenu.style.display === 'block' ? 'true' : 'false');
+  el('#stroke-popup').style.display = 'none';
+  el('#text-popup').style.display = 'none';
+});
+
+modeItems.forEach(item => {
+  item.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const mode = item.dataset.mode;
+    state.selectionMode = mode;
+    updateSelectionModeUI();
+    
+    // Close menu
+    selectionModeMenu.style.display = 'none';
+    selectModeBtn.setAttribute('aria-expanded', 'false');
+  });
+});
+
+// Function to update UI to match current selection mode
+function updateSelectionModeUI() {
+  modeItems.forEach(i => i.classList.remove('active'));
+  const activeItem = document.querySelector(`.selection-mode-item[data-mode="${state.selectionMode}"]`);
+  if (activeItem) activeItem.classList.add('active');
+}
+
+// Close menu when clicking outside (similar to other popups)
+document.addEventListener('click', (e) => {
+  if (!selectModeBtn.contains(e.target) && !selectionModeMenu.contains(e.target)) {
+    selectionModeMenu.style.display = 'none';
+    selectModeBtn.setAttribute('aria-expanded', 'false');
+  }
+});
 
 // Undo/Redo wiring
 const undoBtnEl = el('#undo-btn'); const redoBtnEl = el('#redo-btn');
@@ -4244,6 +4431,7 @@ strokeSettingsBtn.addEventListener('click', (e) => {
   strokePopup.style.top = rect.bottom + 4 + 'px';
   strokePopup.style.display = (strokePopup.style.display === 'block') ? 'none' : 'block';
   el('#text-popup').style.display = 'none';
+  el('#selection-mode-menu').style.display = 'none';
 });
 strokeColorInput.addEventListener('input', (e) => { state.stroke.color = e.target.value; });
 strokeWidthInput.addEventListener('input', (e) => {
@@ -4517,6 +4705,7 @@ textSettingsBtn.addEventListener('click', (e) => {
   textPopup.style.top = rect.bottom + 4 + 'px';
   textPopup.style.display = (textPopup.style.display === 'block') ? 'none' : 'block';
   el('#stroke-popup').style.display = 'none';
+  el('#selection-mode-menu').style.display = 'none';
 });
 
 
@@ -4937,6 +5126,7 @@ function debounce(func, wait) {
 
 // Apply debounce to zoom and pan handlers to improve performance during rapid events
 setTool('select');
+updateSelectionModeUI();
 applyScale();
 refreshLayers();
 // Capture initial state for undo/redo
