@@ -5344,6 +5344,7 @@ window.addEventListener('keydown', (e)=>{
       activeEl.blur();
     }
     clearSelection();
+    document.activeElement?.blur();
     setTool('select');
     return;
   }
