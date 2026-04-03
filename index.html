@@ -4183,7 +4183,9 @@ const selectionModeMenu = el('#selection-mode-menu');
 const modeItems = document.querySelectorAll('.selection-mode-item');
 
 selectModeBtn.addEventListener('click', (e) => {
+  e.preventDefault();
   e.stopPropagation();
+  setTool('select');
   const rect = selectModeBtn.closest('.tool-btn-group').getBoundingClientRect();
   selectionModeMenu.style.left = rect.left + 'px';
   selectionModeMenu.style.top = rect.bottom + 4 + 'px';
@@ -4195,10 +4197,12 @@ selectModeBtn.addEventListener('click', (e) => {
 
 modeItems.forEach(item => {
   item.addEventListener('click', (e) => {
+    e.preventDefault();
     e.stopPropagation();
     const mode = item.dataset.mode;
     state.selectionMode = mode;
     updateSelectionModeUI();
+    setTool('select');
     
     // Close menu
     selectionModeMenu.style.display = 'none';
