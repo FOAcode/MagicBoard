@@ -3704,6 +3704,7 @@ window.addEventListener('paste', (ev)=>{
       
       // Defer history until image loads to capture final dimensions
       createImageItem(url, x, y, imageWidth, { deferHistory: true });
+      setTool('select');
       ev.preventDefault();
       return;
     }
