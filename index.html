@@ -339,6 +339,8 @@
     pointer-events:auto; /* This will be toggled by JS */
     overflow:visible;
     z-index: 0; /* Base z-index */
+    shape-rendering: geometricPrecision;
+    image-rendering: auto;
   }
   
   /* Each stroke is wrapped in a <g> to allow group-level selection and easier hit testing */
@@ -365,9 +367,20 @@
     stroke-linejoin: round;
     fill: none;
     pointer-events: auto;
-    touch-action: none;
-    shape-rendering: auto;
-    filter: blur(0.25px);
+    /* Final quality: blur is only active when not drawing */
+    filter: blur(0.25px); 
+    transition: filter 0.2s;
+    shape-rendering: geometricPrecision;
+  }
+
+  /* Update this section in your <style> tag */
+  .stroke.is-drawing {
+    filter: none !important;
+    will-change: d;
+    /* Change from optimizeSpeed to geometricPrecision */
+    shape-rendering: geometricPrecision; 
+    /* Add a very slight opacity to soften the edges without a heavy blur */
+    opacity: 0.98; 
   }
 
   /* Invisible wider path used as a hit target for thin strokes */
@@ -960,6 +973,18 @@
   <script>
 /* Whiteboard v3 */
 
+/// --- NEW: Board coordinate caching for better performance ---
+let boardRect = null; // Caches board position to prevent layout thrashing
+
+function getBoardPointFromEvent(e) {
+  // Uses cached rect if drawing to prevent "heavy" lag
+  const rect = boardRect || board.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / state.scale,
+    y: (e.clientY - rect.top) / state.scale
+  };
+}
+
 /* Utilities */
 const el = (q, ctx=document)=>ctx.querySelector(q);
 const id = (prefix='id')=> prefix + '-' + Math.random().toString(36).slice(2,9);
@@ -1129,18 +1154,30 @@ function getBoardPointFromEvent(e){
   return { x, y };
 }
 
+/// --- NEW: Finalize stroke group on mouse up, with improved path closing logic ---
 function finalizeStrokeGroup() {
+  if (currentPath) {
+    currentPath.classList.remove('is-drawing'); // Re-enables blur
+    const pts = currentPath.points;
+    if (pts.length > 1) {
+      const last = pts[pts.length - 1];
+      // Close path exactly at the cursor release point
+      currentPath.setAttribute('d', `${currentPath._baseD} L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`);
+    }
+  }
+
   if (currentStrokeGroup) {
     if (currentStrokeGroup.children.length === 0) {
-      currentSvgWrapper.remove(); // Remove the whole SVG wrapper
+      currentSvgWrapper?.remove();
     } else {
-      makeSvgSelectable(currentStrokeGroup); // Pass the <g> element
+      makeSvgSelectable(currentStrokeGroup);
       refreshLayers();
     }
     currentStrokeGroup = null;
     currentSvgWrapper = null;
+    currentPath = null;
+    boardRect = null; // Clear layout cache
   }
-  straightLineState = null;
 }
 
 
@@ -2299,151 +2336,67 @@ const rgb = hexToRgbCached(state.text.bgColor);
 }
 
 /* SVG Stroke creation */
-// --- MODIFIED: Creates a new SVG wrapper for each stroke group ---
+// --- 1. START STROKE ---
 function startStroke(x, y) {
   const uid = id('stroke-group');
   currentSvgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   currentSvgWrapper.classList.add('stroke-wrapper');
   currentSvgWrapper.style.zIndex = state.nextZ++;
-  currentSvgWrapper.dataset.id = uid;
-  currentSvgWrapper.dataset.type = 'stroke-group';
   board.appendChild(currentSvgWrapper);
 
-  currentStrokeGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
-  currentStrokeGroup.dataset.id = uid;
-  currentStrokeGroup.dataset.type = 'stroke-group-g';
+  currentStrokeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   currentSvgWrapper.appendChild(currentStrokeGroup);
 
-  clearSelection();
-
-  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.classList.add('stroke');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.classList.add('stroke', 'is-drawing'); // Start without blur
   path.dataset.type = 'stroke';
   path.dataset.id = id('stroke');
-  path.points = [{x, y}];
-  path.setAttribute('d', `M ${x - 0.01} ${y} L ${x + 0.01} ${y}`);
+
+  // Performance setup
+  path.points = [{ x, y }];
+  const sx = x.toFixed(1), sy = y.toFixed(1);
+  path._baseD = `M ${sx} ${sy}`;
+  path.setAttribute('d', `M ${sx} ${sy} L ${sx} ${sy}`); // Immediate visual feedback
+
   path.setAttribute('stroke', state.stroke.color);
   path.setAttribute('stroke-width', state.stroke.width);
-
-  // Create arrow markers directly inside the same group
-  if (state.stroke.startArrow || state.stroke.endArrow) {
-    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    const markerId = `arrow-${uid}`;
-    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-    
-    const arrowSize = state.stroke.arrowSize;
-    marker.id = markerId;
-    marker.setAttribute('markerWidth', arrowSize);
-    marker.setAttribute('markerHeight', arrowSize);
-    marker.setAttribute('refX', arrowSize);
-    marker.setAttribute('refY', arrowSize / 2);
-    marker.setAttribute('markerUnits', 'strokeWidth');
-    marker.setAttribute('orient', 'auto-start-reverse');
-    marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
-
-    const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    polygon.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
-    polygon.setAttribute('fill', state.stroke.color);
-    
-    marker.appendChild(polygon);
-    defs.appendChild(marker);
-    currentStrokeGroup.appendChild(defs);
-
-    if (state.stroke.startArrow) path.setAttribute('marker-start', `url(#${markerId})`);
-    if (state.stroke.endArrow) path.setAttribute('marker-end', `url(#${markerId})`);
-    path.dataset.arrowSize = arrowSize;
-  }
 
   currentStrokeGroup.appendChild(path);
   makePathSelectable(path);
   return path;
 }
 
-/* Smoothing helpers -------------------------------------------------- */
-// Convert Catmull-Rom to Bezier path string. t is tension (commonly 1)
-function catmullRom2bezier(crp, t) {
-  t = t === undefined ? 1 : t;
-  let d = `M ${crp[0].x} ${crp[0].y}`;
-  for (let i = 0; i < crp.length - 1; i++) {
-    const p0 = i ? crp[i - 1] : crp[i];
-    const p1 = crp[i];
-    const p2 = crp[i + 1];
-    const p3 = (i !== crp.length - 2) ? crp[i + 2] : p2;
 
-    const bp1x = p1.x + (p2.x - p0.x) / 6 * t;
-    const bp1y = p1.y + (p2.y - p0.y) / 6 * t;
-    const bp2x = p2.x - (p3.x - p1.x) / 6 * t;
-    const bp2y = p2.y - (p3.y - p1.y) / 6 * t;
-
-    d += ` C ${bp1x} ${bp1y}, ${bp2x} ${bp2y}, ${p2.x} ${p2.y}`;
-  }
-  return d;
-}
-
-/* Smoothing helpers -------------------------------------------------- */
-
-// Use Midpoint Quadratic Beziers instead of Catmull-Rom.
-// It is computationally much lighter and produces more natural handwriting curves.
-function getSmoothPath(points) {
-  if (!points || points.length === 0) return '';
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-
-  let d = `M ${points[0].x} ${points[0].y}`;
-
-  for (let i = 1; i < points.length - 1; i++) {
-    const xc = (points[i].x + points[i + 1].x) / 2;
-    const yc = (points[i].y + points[i + 1].y) / 2;
-    d += ` Q ${points[i].x} ${points[i].y}, ${xc} ${yc}`;
-  }
-
-  // Connect the final point
-  const last = points[points.length - 1];
-  d += ` L ${last.x} ${last.y}`;
-  return d;
-}
-
-// Add a new point to a path with a lightweight smoothing filter
+// --- 2. UPDATE STROKE WITH NEW POINT ---
 function addPointToPath(path, x, y) {
   if (!path) return;
-  const pts = path.points || [];
+  const pts = path.points;
+  const last = pts[pts.length - 1];
+  const dx = x - last.x;
+  const dy = y - last.y;
 
-  if (pts.length > 0) {
-    const last = pts[pts.length - 1];
-    
-    // --- THE SMOOTHING MAGIC ---
-    // Blend the new coordinate with the last one (30% old, 70% new).
-    // This pulls the point slightly backward, smoothing out hardware jitters.
-    x = last.x * 0.3 + x * 0.7;
-    y = last.y * 0.3 + y * 0.7;
+  // Skip tiny movements to save CPU
+  if (dx * dx + dy * dy < 2.0) return;
 
-    const dx = x - last.x;
-    const dy = y - last.y;
-    
-    // Performance optimization: drop microscopic movements
-    if (dx * dx + dy * dy < 4) return; 
+  // Adaptive smoothing: Fast moves are sharp, slow moves are filtered
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const weight = Math.max(0.45, Math.min(0.98, dist / 25));
+  const smoothedX = last.x + dx * weight;
+  const smoothedY = last.y + dy * weight;
+
+  pts.push({ x: smoothedX, y: smoothedY });
+
+  // Update string incrementally (O(1) complexity)
+  if (pts.length >= 3) {
+    const pPrev = pts[pts.length - 2];
+    const midX = (pPrev.x + smoothedX) / 2;
+    const midY = (pPrev.y + smoothedY) / 2;
+    // Commit the previous segment
+    path._baseD += ` Q ${pPrev.x.toFixed(1)} ${pPrev.y.toFixed(1)}, ${midX.toFixed(1)} ${midY.toFixed(1)}`;
   }
 
-  pts.push({ x, y });
-
-  // Keep a bounded number of points to avoid huge arrays for long strokes
-  if (pts.length > 2000) pts.splice(0, pts.length - 2000);
-
-  path.points = pts;
-  
-  // getSmoothPath is still using our fast Quadratic Bezier from the previous step
-  const d = getSmoothPath(pts);
-  path.setAttribute('d', d);
-
-  // Defer invisible hit-path update until the stroke is finished
-  if (!drawing && path._hitPath) {
-    try {
-      path._hitPath.setAttribute('d', d);
-      const visibleWidth = parseFloat(path.getAttribute('stroke-width') || '2');
-      const hitMargin = 20;
-      path._hitPath.setAttribute('stroke-width', Math.max(visibleWidth + hitMargin, 8));
-    } catch (err) { /* ignore if DOM changed */ }
-  }
+  // Always draw a crisp line to the current cursor position
+  path.setAttribute('d', `${path._baseD} L ${smoothedX.toFixed(1)} ${smoothedY.toFixed(1)}`);
 }
 
 // Snap a point (mx,my) relative to anchor (sx,sy) to the nearest angle step (degrees)
@@ -3385,6 +3338,7 @@ function onBoardPointerDown(e) {
     }
   }
 }
+
 
 function onBoardPointerMove(e) {
   if (isLassoing) {
