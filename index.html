@@ -2380,58 +2380,70 @@ function catmullRom2bezier(crp, t) {
   return d;
 }
 
-function getSmoothPath(points){
-  if(!points || points.length === 0) return '';
-  if(points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  if(points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-  // Use Catmull-Rom to cubic Bezier conversion for smooth curves
-  try{
-    return catmullRom2bezier(points, 1);
-  }catch(err){
-    // Fallback to simple polyline if anything goes wrong
-    return 'M ' + points.map((p,i)=> (i===0?`${p.x} ${p.y}`:`L ${p.x} ${p.y}`)).join(' ');
+/* Smoothing helpers -------------------------------------------------- */
+
+// Use Midpoint Quadratic Beziers instead of Catmull-Rom.
+// It is computationally much lighter and produces more natural handwriting curves.
+function getSmoothPath(points) {
+  if (!points || points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const xc = (points[i].x + points[i + 1].x) / 2;
+    const yc = (points[i].y + points[i + 1].y) / 2;
+    d += ` Q ${points[i].x} ${points[i].y}, ${xc} ${yc}`;
   }
+
+  // Connect the final point
+  const last = points[points.length - 1];
+  d += ` L ${last.x} ${last.y}`;
+  return d;
 }
 
-// Add a new point to a path with a tiny pre-filter to reduce jitter
-function addPointToPath(path, x, y){
-  if(!path) return;
+// Add a new point to a path with a lightweight smoothing filter
+function addPointToPath(path, x, y) {
+  if (!path) return;
   const pts = path.points || [];
-  // Small distance threshold to avoid extremely close points
-  const last = pts[pts.length-1];
-  if(last){
-    const dx = x - last.x; const dy = y - last.y;
-    const distSq = dx*dx + dy*dy;
-    if(distSq < 0.25) return; // ignore noise within 0.5px
+
+  if (pts.length > 0) {
+    const last = pts[pts.length - 1];
+    
+    // --- THE SMOOTHING MAGIC ---
+    // Blend the new coordinate with the last one (30% old, 70% new).
+    // This pulls the point slightly backward, smoothing out hardware jitters.
+    x = last.x * 0.3 + x * 0.7;
+    y = last.y * 0.3 + y * 0.7;
+
+    const dx = x - last.x;
+    const dy = y - last.y;
+    
+    // Performance optimization: drop microscopic movements
+    if (dx * dx + dy * dy < 4) return; 
   }
 
-  // Moving-average prefilter: if we have at least 2 points, average them to smooth tiny zig-zags
-  if(pts.length >= 2){
-    const pprev = pts[pts.length-2];
-    const prev = pts[pts.length-1];
-    const avgX = (pprev.x + prev.x + x)/3;
-    const avgY = (pprev.y + prev.y + y)/3;
-    pts.push({x: avgX, y: avgY});
-  } else {
-    pts.push({x, y});
-  }
+  pts.push({ x, y });
 
   // Keep a bounded number of points to avoid huge arrays for long strokes
-  if(pts.length > 2000) pts.splice(0, pts.length - 2000);
+  if (pts.length > 2000) pts.splice(0, pts.length - 2000);
 
   path.points = pts;
+  
+  // getSmoothPath is still using our fast Quadratic Bezier from the previous step
   const d = getSmoothPath(pts);
   path.setAttribute('d', d);
-  // If this path has an associated invisible hit-path, keep it in sync so pointer area follows the stroke
-  try {
-    if (path._hitPath) {
+
+  // Defer invisible hit-path update until the stroke is finished
+  if (!drawing && path._hitPath) {
+    try {
       path._hitPath.setAttribute('d', d);
-      // also update hit width in case stroke-width changed dynamically
-  const visibleWidth = parseFloat(path.getAttribute('stroke-width') || '2');
-  const hitMargin = 20;
-  path._hitPath.setAttribute('stroke-width', Math.max(visibleWidth + hitMargin, 8));
-    }
-  } catch (err) { /* ignore if DOM changed */ }
+      const visibleWidth = parseFloat(path.getAttribute('stroke-width') || '2');
+      const hitMargin = 20;
+      path._hitPath.setAttribute('stroke-width', Math.max(visibleWidth + hitMargin, 8));
+    } catch (err) { /* ignore if DOM changed */ }
+  }
 }
 
 // Snap a point (mx,my) relative to anchor (sx,sy) to the nearest angle step (degrees)
