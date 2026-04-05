@@ -339,8 +339,6 @@
     pointer-events:auto; /* This will be toggled by JS */
     overflow:visible;
     z-index: 0; /* Base z-index */
-    shape-rendering: geometricPrecision;
-    image-rendering: auto;
   }
   
   /* Each stroke is wrapped in a <g> to allow group-level selection and easier hit testing */
@@ -367,20 +365,17 @@
     stroke-linejoin: round;
     fill: none;
     pointer-events: auto;
-    /* Final quality: blur is only active when not drawing */
-    filter: blur(0.25px); 
-    transition: filter 0.2s;
+    touch-action: none;
     shape-rendering: geometricPrecision;
+    /* This is your final "beautiful" look */
+    filter: blur(0.25px); 
+    transition: filter 0.1s ease-out;
   }
 
-  /* Update this section in your <style> tag */
+  /* When this class is added, the expensive blur is disabled for speed */
   .stroke.is-drawing {
     filter: none !important;
     will-change: d;
-    /* Change from optimizeSpeed to geometricPrecision */
-    shape-rendering: geometricPrecision; 
-    /* Add a very slight opacity to soften the edges without a heavy blur */
-    opacity: 0.98; 
   }
 
   /* Invisible wider path used as a hit target for thin strokes */
@@ -973,19 +968,7 @@
   <script>
 /* Whiteboard v3 */
 
-/// --- NEW: Board coordinate caching for better performance ---
-let boardRect = null; // Caches board position to prevent layout thrashing
-
-function getBoardPointFromEvent(e) {
-  // Uses cached rect if drawing to prevent "heavy" lag
-  const rect = boardRect || board.getBoundingClientRect();
-  return {
-    x: (e.clientX - rect.left) / state.scale,
-    y: (e.clientY - rect.top) / state.scale
-  };
-}
-
-/* Utilities */
+// --- Utility functions ---
 const el = (q, ctx=document)=>ctx.querySelector(q);
 const id = (prefix='id')=> prefix + '-' + Math.random().toString(36).slice(2,9);
 
@@ -1005,10 +988,12 @@ function hexToRgb(hex) {
   return { r, g, b };
 }
 
+// Converts r,g,b values to a hex string like #rrggbb
 function rgbToHex(r, g, b) {
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toLowerCase();
 }
 
+// Parses an rgba() or rgb() string and returns an object with r, g, b, a components. If input is 'transparent', returns white with 0 alpha.
 function parseRgba(rgbaString) {
   if (!rgbaString || rgbaString === 'transparent') {
     return { r: 255, g: 255, b: 255, a: 0 };
@@ -1024,8 +1009,9 @@ function parseRgba(rgbaString) {
   }
   return { r: 0, g: 0, b: 0, a: 1 }; // Default to black if parse fails
 }
-// --- END NEW ---
 
+
+/// --- NEW: Update custom cursor position and appearance based on current tool and stroke settings
 let lastMouseEvent = null;
 window.addEventListener('pointermove', e => {
   lastMouseEvent = e;
@@ -1073,7 +1059,7 @@ let state = {
   }
 };
 
-/* --- State for new features --- */
+// --- NEW: Stroke drawing state ---
 let currentStrokeGroup = null; // This is the <g> element
 let currentSvgWrapper = null; // --- NEW: This is the <svg> wrapper ---
 let isLassoing = false;
@@ -1085,7 +1071,7 @@ let rectSelectStartY = 0;
 let rectSelectPath = null; // SVG path for displaying the rectangle
 let straightLineState = null; // For polyline drawing
 
-/* History (undo/redo) */
+// --- Undo/Redo system ---
 const HISTORY_LIMIT = 50;
 let undoStack = [];
 let redoStack = [];
@@ -1100,6 +1086,7 @@ window.addEventListener('resize', () => {
     checkToolbarOverflow();
 });
 
+// Call this at the start of a slider change to record the initial state, and set a guard to avoid recording intermediate states until finalized
 function startSliderHistory(){
   if(sliderChanging) return;
   if(isRestoringHistory) return;
@@ -1112,6 +1099,7 @@ function startSliderHistory(){
   updateUndoRedoButtons();
 }
 
+// Call this at the end of slider change, or if slider change is cancelled (e.g. by pressing Esc), to finalize the history state
 function endSliderHistory(){
   if(!sliderChanging){
     // if not started via startSliderHistory, just push final state
@@ -1136,7 +1124,7 @@ function endSliderHistory(){
   updateUndoRedoButtons();
 }
 
-/* DOM refs */
+// --- NEW: Get current board coordinates from mouse event, accounting for scale and position
 const board = el('#board');
 const svg = el('#strokes-svg'); // This is the main SVG for lasso
 const layerList = el('#layer-list');
@@ -1146,7 +1134,7 @@ const drawingGuides = el('#drawing-guides');
 const guideH = el('#guide-h');
 const guideV = el('#guide-v');
 
-/* Helper: convert client event to board-local coordinates accounting for CSS scale */
+// --- NEW: Get board coordinates from mouse event, accounting for scale and position
 function getBoardPointFromEvent(e){
   const rect = board.getBoundingClientRect();
   const x = (e.clientX - rect.left) / state.scale;
@@ -1154,34 +1142,29 @@ function getBoardPointFromEvent(e){
   return { x, y };
 }
 
-/// --- NEW: Finalize stroke group on mouse up, with improved path closing logic ---
+/// --- NEW: Finalize current stroke group by making it selectable and refreshing layers, or removing if empty
 function finalizeStrokeGroup() {
+  // Remove the performance class from the current path so blur re-activates
   if (currentPath) {
-    currentPath.classList.remove('is-drawing'); // Re-enables blur
-    const pts = currentPath.points;
-    if (pts.length > 1) {
-      const last = pts[pts.length - 1];
-      // Close path exactly at the cursor release point
-      currentPath.setAttribute('d', `${currentPath._baseD} L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`);
-    }
+    currentPath.classList.remove('is-drawing');
   }
 
   if (currentStrokeGroup) {
     if (currentStrokeGroup.children.length === 0) {
-      currentSvgWrapper?.remove();
+      currentSvgWrapper.remove();
     } else {
       makeSvgSelectable(currentStrokeGroup);
       refreshLayers();
     }
     currentStrokeGroup = null;
     currentSvgWrapper = null;
-    currentPath = null;
-    boardRect = null; // Clear layout cache
+    currentPath = null; // Ensure reference is cleared
   }
+  straightLineState = null;
 }
 
 
-/* ----------------- HISTORY HELPERS (per-stroke undo/redo) ----------------- */
+/// --- Create snapshot of current board state for undo/redo and export
 function createSnapshot() {
   const items = [];
 
@@ -1239,7 +1222,7 @@ function createSnapshot() {
     items.push(obj);
   });
 
-  // --- Capture strokes (Removed :not([data-imported]) exclusion)
+  // --- Capture strokes (including imported ones, since they may have been modified)
   board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
     const g = svgWrapper.querySelector('g');
     if (!g) return;
@@ -1279,6 +1262,7 @@ function createSnapshot() {
   };
 }
 
+/// --- Restore from snapshot (used for undo/redo and import)
 function restoreSnapshot(snapshot) {
   if (!snapshot) return;
   isRestoringHistory = true;
@@ -1415,12 +1399,14 @@ function restoreSnapshot(snapshot) {
   isRestoringHistory = false;
 }
 
+// Enable or disable Undo/Redo buttons based on stack state
 function updateUndoRedoButtons(){
   const undoBtn = el('#undo-btn'); const redoBtn = el('#redo-btn');
   if(undoBtn) undoBtn.disabled = undoStack.length <= 1; // <-- MODIFIED
   if(redoBtn) redoBtn.disabled = redoStack.length === 0;
 }
 
+// Quick check to see if two snapshots are effectively the same in terms of items, to avoid pushing redundant history states
 function snapshotItemsEqual(items1, items2) {
   if (!items1 || !items2 || items1.length !== items2.length) return false;
   
@@ -1439,6 +1425,7 @@ function snapshotItemsEqual(items1, items2) {
   return true;
 }
 
+// Call this after any user action that modifies the board state and should be undoable
 function pushHistory() {
   if (isRestoringHistory) return;
   
@@ -1464,6 +1451,7 @@ function pushHistory() {
   updateUndoRedoButtons();
 }
 
+// Call this to undo the last action
 function undo(){
   if(undoStack.length <= 1) return;
   
@@ -1481,6 +1469,7 @@ function undo(){
   updateUndoRedoButtons();
 }
 
+// Call this to redo the last undone action
 function redo(){
   if(redoStack.length === 0) return;
 
@@ -1494,61 +1483,29 @@ function redo(){
 
   updateUndoRedoButtons();
 }
+//----------------- END HISTORY HELPERS -----------------
 
-/* ---------------------------------------------------- */
-
-
+/// --- TOOL SELECTION ---
 function setTool(t){
-
-
   if (state.tool === 'draw' && t !== 'draw') {
-
-
     finalizeStrokeGroup();
-
-
   }
 
-
-  
-
-
   // Check if any images are selected before changing tool
-
-
   const hasSelectedImages = Array.from(state.selectedIds).some(id => {
-
 
     const node = findNodeById(id);
 
-
     return node && node.dataset.type === 'image';
-
-
   });
-
-
-  
-
 
   state.tool = t;
 
-
-  
-
-
   TOOL_BTN.forEach(b => {
 
-
     if (!b.closest('.tool-btn-group')) {
-
-
       b.classList.toggle('active', b.dataset.tool === t);
-
-
     }
-
-
   });
 
   // Hide opacity slider when switching away from select tool
@@ -1568,568 +1525,128 @@ function setTool(t){
 
   const drawGroup = el('#draw-tool-group');
 
-
   if (t === 'draw' || t === 'stroke-settings') {
-
-
     drawGroup.classList.add('active');
-
-
   } else {
-
-
     drawGroup.classList.remove('active');
-
-
   }
-
-
-  
-
 
   const textGroup = el('#text-tool-group');
 
-
   if (t === 'text' || t === 'text-settings') {
-
-
     textGroup.classList.add('active');
-
-
   } else {
-
-
     textGroup.classList.remove('active');
-
-
   }
-
-
-  
-
 
   if (t === 'select') {
-
-
     svg.style.pointerEvents = 'auto'; // SVG is needed for lasso
-
-
   } else {
-
-
     svg.style.pointerEvents = 'auto'; // Also needed for drawing
-
-
   }
-
-
-  
-
 
   const customCursor = el('#custom-cursor');
 
-
   if(t === 'draw') {
-
-
     board.style.cursor = 'none';
-
-
     if (customCursor) customCursor.style.display = 'block';
-
-
         if (toolbarStroke) {
-
-
             toolbarStroke.style.display = 'flex';
-
-
             const quickColors = el('#quick-stroke-colors');
-
-
             if (quickColors) {
-
-
                 quickColors.style.display = 'flex'; // Show all quick actions together
-
-
             }
-
-
             try { updateToolbarStrokeUI(); } catch (e) { }
-
-
         }
-
-
     updateCustomCursor();
-
-
   } else {
-
-
     if (customCursor) customCursor.style.display = 'none';
-
-
     if(t === 'text') {
-
-
       board.style.cursor = 'text';
-
-
     } else {
-
-
       board.style.cursor = 'default';
-
-
     }
-
-
     if (toolbarStroke) toolbarStroke.style.display = 'none';
-
-
   }
 
-
-  
-
-
   // Show/hide text toolbar when text tool is active
-
-
   const toolbarText = el('#text-toolbar');
-
-
           if (toolbarText) {
-
-
               toolbarText.style.display = (t === 'text') ? 'flex' : 'none';
-
-
               if (t === 'text') setTimeout(()=>{ try{ updateToolbarTextUI(); }catch(e){} }, 0);
-
-
           }
-
-
               checkToolbarOverflow();
-
-
               }
-
-
-          
-
-
               function checkToolbarOverflow() {
-
-
-          
-
-
                   const toolbar = el('.toolbar');
-
-
-          
-
-
                   if (!toolbar) return;
-
-
-          
-
-
-              
-
-
-          
-
-
                   setTimeout(() => {
-
-
-          
-
-
                       if (document.body.classList.contains('dragging')) return;
 
-
-          
-
-
-              
-
-
-          
-
-
                       // --- Create an off-screen clone to pre-determine the final state ---
-
-
-          
-
-
                       const clone = toolbar.cloneNode(true);
-
-
-          
-
-
                       clone.style.position = 'absolute';
-
-
-          
-
-
                       clone.style.left = '-9999px';
-
-
-          
-
-
                       clone.style.top = '-9999px';
-
-
-          
-
-
                       clone.style.visibility = 'hidden';
-
-
-          
-
-
                       clone.style.width = toolbar.clientWidth + 'px';
-
-
-          
-
-
                       document.body.appendChild(clone);
-
-
-          
-
-
-              
-
-
-          
-
 
                       const mainToolsFull = { '#tool-select': 'Select', '#tool-draw': 'Draw', '#tool-text': 'Text' };
 
-
-          
-
-
                       const mainToolsShort = { '#tool-select': 'S', '#tool-draw': 'D', '#tool-text': 'T' };
 
-
-          
-
-
-              
-
-
-          
-
-
                       // --- Use the clone to determine the required condensation level ---
-
-
-          
-
-
                       let condensationLevel = 0;
 
-
-          
-
-
-              
-
-
-          
-
-
                       // Reset clone to full expansion to get a baseline
-
-
-          
-
-
                       clone.classList.remove('toolbar-condensed', 'toolbar-super-condensed');
-
-
-          
-
-
                       for (const id in mainToolsFull) { clone.querySelector(id).innerText = mainToolsFull[id]; }
 
-
-          
-
-
                       const quickColorsClone = clone.querySelector('#quick-stroke-colors');
-
-
-          
-
-
                       const strokeToolbarClone = clone.querySelector('#stroke-toolbar');
-
-
-          
-
-
                       if (quickColorsClone && strokeToolbarClone && strokeToolbarClone.style.display !== 'none') {
-
-
-          
-
-
                           quickColorsClone.style.display = 'flex';
-
-
-          
-
-
                       }
-
-
-          
-
-
-              
-
-
-          
-
 
                       // Check overflow on the clone in stages
-
-
-          
-
-
                       if (clone.scrollWidth > clone.clientWidth + 1) {
-
-
-          
-
-
                           condensationLevel = 1;
-
-
-          
-
-
                           clone.classList.add('toolbar-condensed');
-
-
-          
-
-
                       }
 
-
-          
-
-
                       if (clone.scrollWidth > clone.clientWidth + 1) {
-
-
-          
-
-
                           condensationLevel = 2;
-
-
-          
-
-
                           if (quickColorsClone) quickColorsClone.style.display = 'none';
-
-
-          
-
-
                       }
-
-
-          
-
-
                       if (clone.scrollWidth > clone.clientWidth + 1) {
-
-
-          
-
-
                           condensationLevel = 3;
-
-
-          
-
-
                           clone.classList.add('toolbar-super-condensed');
 
-
-          
-
-
                           for (const id in mainToolsShort) { clone.querySelector(id).innerText = mainToolsShort[id]; }
-
-
-          
-
-
                       }
-
-
-          
-
-
-              
-
-
-          
-
 
                       // --- Apply the final determined state to the REAL toolbar in one go ---
-
-
-          
-
-
                       toolbar.classList.toggle('toolbar-condensed', condensationLevel >= 1);
-
-
-          
-
-
                       toolbar.classList.toggle('toolbar-super-condensed', condensationLevel >= 3);
 
-
-          
-
-
-              
-
-
-          
-
-
                       if (condensationLevel >= 3) {
-
-
-          
-
-
                           for (const id in mainToolsShort) { el(id).innerText = mainToolsShort[id]; }
-
-
-          
-
-
                       } else {
-
-
-          
-
-
                           for (const id in mainToolsFull) { el(id).innerText = mainToolsFull[id]; }
-
-
-          
-
-
                       }
-
-
-          
-
-
-              
-
-
-          
-
 
                       const quickColors = el('#quick-stroke-colors');
-
-
-          
-
-
                       const strokeToolbar = el('#stroke-toolbar');
 
-
-          
-
-
                       if (quickColors && strokeToolbar && strokeToolbar.style.display !== 'none') {
-
-
-          
-
-
                           quickColors.style.display = (condensationLevel >= 2) ? 'none' : 'flex';
-
-
-          
-
-
                       }
 
-
-          
-
-
-              
-
-
-          
-
-
                       // --- Cleanup ---
-
-
-          
-
-
                       document.body.removeChild(clone);
-
-
-          
-
-
-              
-
-
-          
-
-
                   }, 50);
-
-
-          
-
-
               }
-
-
-  
-
-
-  
-
-
-  
-
-
       function updateCustomCursor() {
   const customCursor = document.getElementById('custom-cursor');
   if (!customCursor) return;
@@ -2181,8 +1698,7 @@ function updateGuidelinesAndCursor() {
   updateCustomCursorPosition();
 }
 
-/* Element creation */
-// --- MODIFIED: Added options parameter for import ---
+/// --- MODIFIED: Added options parameter for import and to control history/selection behavior ---
 function createImageItem(src, x=80, y=80, w=240, options = {}){
   finalizeStrokeGroup();
   const wrapper = document.createElement('div');
@@ -2235,7 +1751,7 @@ function createImageItem(src, x=80, y=80, w=240, options = {}){
   return wrapper;
 }
 
-// If an image is displayed larger than its intrinsic width, apply pixelated rendering
+// --- NEW: Function to toggle pixelation class based on displayed size vs natural size ---
 function updateImagePixelation(wrapper){
   if(!wrapper) return;
 
@@ -2336,28 +1852,33 @@ const rgb = hexToRgbCached(state.text.bgColor);
 }
 
 /* SVG Stroke creation */
-// --- 1. START STROKE ---
+// --- MODIFIED: Creates a new SVG wrapper for each stroke group ---
 function startStroke(x, y) {
   const uid = id('stroke-group');
   currentSvgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   currentSvgWrapper.classList.add('stroke-wrapper');
   currentSvgWrapper.style.zIndex = state.nextZ++;
+  currentSvgWrapper.dataset.id = uid;
+  currentSvgWrapper.dataset.type = 'stroke-group';
   board.appendChild(currentSvgWrapper);
 
-  currentStrokeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  currentStrokeGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+  currentStrokeGroup.dataset.id = uid;
+  currentStrokeGroup.dataset.type = 'stroke-group-g';
   currentSvgWrapper.appendChild(currentStrokeGroup);
 
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.classList.add('stroke', 'is-drawing'); // Start without blur
+  clearSelection();
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.classList.add('stroke');
+  
+  // ADD THIS LINE: Disable blur while we are drawing
+  path.classList.add('is-drawing'); 
+
   path.dataset.type = 'stroke';
   path.dataset.id = id('stroke');
-
-  // Performance setup
-  path.points = [{ x, y }];
-  const sx = x.toFixed(1), sy = y.toFixed(1);
-  path._baseD = `M ${sx} ${sy}`;
-  path.setAttribute('d', `M ${sx} ${sy} L ${sx} ${sy}`); // Immediate visual feedback
-
+  path.points = [{x, y}];
+  path.setAttribute('d', `M ${x.toFixed(1)} ${y.toFixed(1)}`);
   path.setAttribute('stroke', state.stroke.color);
   path.setAttribute('stroke-width', state.stroke.width);
 
@@ -2367,36 +1888,67 @@ function startStroke(x, y) {
 }
 
 
-// --- 2. UPDATE STROKE WITH NEW POINT ---
+/**
+ * Highly optimized incremental path drawing
+ * - Uses squared distance for jitter check (faster than Math.hypot)
+ * - Eliminates O(n) array shifting
+ * - Minimizes object property lookups
+ */
 function addPointToPath(path, x, y) {
   if (!path) return;
-  const pts = path.points;
-  const last = pts[pts.length - 1];
-  const dx = x - last.x;
-  const dy = y - last.y;
-
-  // Skip tiny movements to save CPU
-  if (dx * dx + dy * dy < 2.0) return;
-
-  // Adaptive smoothing: Fast moves are sharp, slow moves are filtered
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const weight = Math.max(0.45, Math.min(0.98, dist / 25));
-  const smoothedX = last.x + dx * weight;
-  const smoothedY = last.y + dy * weight;
-
-  pts.push({ x: smoothedX, y: smoothedY });
-
-  // Update string incrementally (O(1) complexity)
-  if (pts.length >= 3) {
-    const pPrev = pts[pts.length - 2];
-    const midX = (pPrev.x + smoothedX) / 2;
-    const midY = (pPrev.y + smoothedY) / 2;
-    // Commit the previous segment
-    path._baseD += ` Q ${pPrev.x.toFixed(1)} ${pPrev.y.toFixed(1)}, ${midX.toFixed(1)} ${midY.toFixed(1)}`;
+  
+  // Use a minimal state object attached to the path to avoid array overhead
+  if (!path._drawState) {
+    path._drawState = {
+      lastX: x,
+      lastY: y,
+      baseD: `M ${x.toFixed(1)} ${y.toFixed(1)}`,
+      pointsCount: 1
+    };
+    path.points = [{ x, y }];
+    path.setAttribute('d', path._drawState.baseD);
+    return;
   }
 
-  // Always draw a crisp line to the current cursor position
-  path.setAttribute('d', `${path._baseD} L ${smoothedX.toFixed(1)} ${smoothedY.toFixed(1)}`);
+  const s = path._drawState;
+  const dx = x - s.lastX;
+  const dy = y - s.lastY;
+  const distSq = dx * dx + dy * dy;
+
+  // 1. Squared Distance Threshold: (1.5 * 1.5 = 2.25)
+  // Faster than Math.hypot because it avoids Math.sqrt()
+  if (distSq < 2.25) return;
+
+  // 2. Optimized Dynamic Weight
+  // Increasing the base weight to 0.4 makes it feel even more "instant"
+  const dist = Math.sqrt(distSq);
+  const weight = Math.max(0.4, Math.min(0.98, dist / 30));
+  
+  const smoothedX = s.lastX + dx * weight;
+  const smoothedY = s.lastY + dy * weight;
+
+  // 3. Incremental Bezier Logic
+  // We only care about the previous point and the current one
+  if (s.pointsCount >= 2) {
+    const midX = (s.lastX + smoothedX) * 0.5;
+    const midY = (s.lastY + smoothedY) * 0.5;
+    
+    // Append the "locked" Quadratic segment to our base cache
+    // Using template literals is faster for string construction
+    s.baseD += ` Q ${s.lastX.toFixed(1)} ${s.lastY.toFixed(1)}, ${midX.toFixed(1)} ${midY.toFixed(1)}`;
+  }
+
+  // Update State
+  s.lastX = smoothedX;
+  s.lastY = smoothedY;
+  s.pointsCount++;
+  
+  // Push to the array only for the final data (no shift() call here)
+  if (path.points) path.points.push({ x: smoothedX, y: smoothedY });
+
+  // 4. Draw the live "tail"
+  // We draw a line from the last midpoint to the current cursor position
+  path.setAttribute('d', `${s.baseD} L ${smoothedX.toFixed(1)} ${smoothedY.toFixed(1)}`);
 }
 
 // Snap a point (mx,my) relative to anchor (sx,sy) to the nearest angle step (degrees)
@@ -2412,8 +1964,7 @@ function snapToAngle(sx, sy, mx, my, stepDeg = 15) {
   return { x: sx + Math.cos(snappedRad) * len, y: sy + Math.sin(snappedRad) * len };
 }
 
-// Helper function to build a clean polyline path with optional rounded corners
-// Always builds fresh from points - bases rounding on straight-line geometry only
+// Build a polyline path string with optional rounded corners. Rounding is applied by generating quadratic Bezier arcs at each corner point.
 function buildPolylinePath(points, useRounding = false, radiusMultiplier = 1.5) {
   if (!points || points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
@@ -2657,7 +2208,7 @@ function applyTransformToPath(pathData, tx, ty) {
     }
   }
   
-  // Apply transformation to coordinates
+  // Now we have an array of commands with their arguments. We can transform the coordinates based on the command type.
   let result = '';
   commands.forEach(({ cmd, args }) => {
     result += cmd;
@@ -2733,6 +2284,7 @@ function applyTransformToPath(pathData, tx, ty) {
   return result.trim();
 }
 
+// Find a node by its data-id, preferring the stroke-wrapper for SVG strokes to ensure proper selection and z-order handling.
 function findNodeById(idstr){
   // Prefer stroke-wrapper (SVG wrapper) when present so selection and z-order operate on the wrapper
   // Fall back to any element with the data-id
@@ -2742,7 +2294,7 @@ function findNodeById(idstr){
   return n;
 }
 
-// --- MODIFIED: Attaches listener to <g> element, selects wrapper ---
+// Make an SVG <g> element selectable as a whole, and also make its child <path> elements selectable individually. This allows users to select and move entire stroke groups or individual strokes within them.
 function makeSvgSelectable(gElement){
   gElement.addEventListener('pointerdown', (ev)=>{
     // If the user is drawing, don't let clicks on existing stroke groups select them.
@@ -2782,6 +2334,7 @@ function makeSvgSelectable(gElement){
   gElement.querySelectorAll('.stroke').forEach(p => makePathSelectable(p));
 }
 
+// Make an individual SVG <path> selectable, allowing it to be selected and dragged independently of its parent group. This is used for strokes that are not part of a group or for individual paths within a group.
 function makePathSelectable(path){
   if (!path) return;
   // Create an invisible wider 'hit' path behind the real stroke so thin strokes are easier to grab.
@@ -2842,7 +2395,7 @@ function makePathSelectable(path){
 }
 
 
-/* Dragging logic for both HTML and SVG items. When dragging SVG strokes, we apply an additive translate() to the existing transform, preserving any prior rotations or scales. For HTML items, we adjust left/top styles as before. */
+// Drag state will track the initial pointer position and the original positions of all items being dragged. For SVG items, we also store the original transform to apply additive translations.
 let dragState = null;
 
 function startDragHtml(node, e){
@@ -2874,7 +2427,7 @@ function startDragHtml(node, e){
   board.setPointerCapture(e.pointerId);
 }
 
-// --- MODIFIED: New function to start dragging SVG elements, shared logic with HTML dragging but handles transforms ---
+// --- MODIFIED: Unified drag handler for both SVG and HTML items, applying additive transforms for SVG and style adjustments for HTML ---
 function startDragSvg(element, e){
   e.preventDefault();
   const pt = getBoardPointFromEvent(e);
@@ -2907,7 +2460,7 @@ function startDragSvg(element, e){
   board.setPointerCapture(e.pointerId);
 }
 
-// --- MODIFIED: Updated pointer move handler to apply additive transforms for SVG and style adjustments for HTML ---
+// --- MODIFIED: Unified pointer move handler that applies additive translations to SVG elements while preserving existing transforms, and style adjustments for HTML elements ---
 function onPointerMove(e){
   if(!dragState) return;
   const pt = getBoardPointFromEvent(e);
@@ -2985,7 +2538,7 @@ function onPointerUp(e) {
 }
 
 
-// Optimized debounce with tracking
+// --- UTILITY: Debounce function to limit how often a function can be called, useful for performance when resizing text boxes or updating pixelation on images during drag ---
 function debounce(func, wait) {
   let timeout;
   let lastThis, lastArgs;
@@ -2997,6 +2550,7 @@ function debounce(func, wait) {
   };
 }
 
+// Fit text within a container by adjusting font size. Uses binary search for efficiency. Temporarily disables contentEditable to prevent cursor from affecting measurements. Adds a small tolerance to account for browser zoom fluctuations.
 function fitText(textDiv, containerWidth, containerHeight) {
     if (!textDiv || containerWidth <= 20 || containerHeight <= 10) {
       if(textDiv) textDiv.style.fontSize = '8px'; 
@@ -3041,10 +2595,10 @@ function fitText(textDiv, containerWidth, containerHeight) {
 
 
 const updateFontSizeDebounced = debounce(fitText, 100);
-
 // Cache for color conversions to reduce repeated calculations
 const colorCache = new Map();
 
+// Convert hex color to RGB with caching for performance. Supports both 3-digit (#abc) and 6-digit (#aabbcc) formats. Caches results in a Map to avoid redundant parsing on frequently used colors.
 function hexToRgbCached(hex) {
   if (!colorCache.has(hex)) {
     let r = 0, g = 0, b = 0;
@@ -3062,8 +2616,7 @@ function hexToRgbCached(hex) {
   return colorCache.get(hex);
 }
 
-/* Resizing logic for HTML items. When resizing images, we also update the pixelation level to keep it crisp. When resizing text boxes, we adjust the font size to fit the new dimensions. The resize handle is a small div in the corner of the item, and dragging it adjusts the width and height of the item. For images, we maintain aspect ratio. For text, we allow free resizing but adjust font size to fit.
-*/
+// --- RESIZING STATE ---
 let resizeState = null;
 function startResizePointer(e){
   e.stopPropagation(); e.preventDefault();
@@ -3082,7 +2635,7 @@ function startResizePointer(e){
 
 
 
-// --- MODIFIED: Resizing now also updates font size for text items, and pixelation for images ---
+// --- MODIFIED: Updated resize move handler to adjust for zoom level and maintain aspect ratio for images. For text, we apply the new size and then call fitText with a tolerance to prevent font-size flickering due to sub-pixel rounding at different zoom levels.
 function onResizeMove(e) {
   if (!resizeState) return;
 
@@ -3149,7 +2702,7 @@ function onResizeMove(e) {
   }
 }
 
-// --- MODIFIED: Finalize resize and push history only if size actually changed ---
+// --- MODIFIED: Updated resize up handler to only refresh layers and push history if a resize actually occurred, preventing unnecessary history entries for clicks that didn't result in size changes. ---
 function onResizeUp(e) {
   window.removeEventListener('pointermove', onResizeMove);
   window.removeEventListener('pointerup', onResizeUp);
@@ -3158,7 +2711,7 @@ function onResizeUp(e) {
   pushHistory();
 }
 
-
+// --- SHORTCUT KEYS --- Added keyboard shortcuts for tools (V for select, D for draw, T for text). These shortcuts are ignored if an input field is focused to prevent interference with typing. Also ignores shortcuts if Ctrl or Meta key is held to avoid conflicts with browser shortcuts.
 window.addEventListener('keydown', (e) => {
   // Ignore key events if an input field is focused
   const isInputFocused = document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
@@ -3197,7 +2750,7 @@ function isPointInPolygon(point, polygon) {
   return isInside;
 }
 
-
+// --- DRAWING HANDLERS --- Handles pointer down events on the board for drawing and selection. For the draw tool, it supports freehand drawing, straight lines with Shift, and single straight lines with Shift+Alt. For the select tool, it initiates lasso or rectangular selection based on the current selection mode. It also handles text tool interactions, allowing users to create new text boxes or select existing ones. The function ensures that drawing actions do not interfere with selection and vice versa, and it manages the state for straight line drawing, including handling interruptions when switching between straight line and freehand modes. It also prevents selection of underlying elements when interacting with the text tool.
 function onBoardPointerDown(e) {
   if (e.button !== 0) return;
   const pt = getBoardPointFromEvent(e);
@@ -3339,7 +2892,7 @@ function onBoardPointerDown(e) {
   }
 }
 
-
+// --- DRAWING POINTER MOVE HANDLER --- Handles pointer move events on the board during drawing and selection. For drawing, it updates the current path based on the mouse movement, supporting straight line snapping with Shift and angle snapping with Ctrl. It also manages the display of guiding lines when Shift is held for straight line drawing. For selection, it updates the lasso path or rectangular selection area as the mouse moves. The function ensures that drawing and selection interactions are smooth and responsive, providing real-time feedback to the user. It also handles the logic for straight line drawing, including updating the path preview and guiding lines based on the current mouse position and snapping settings.
 function onBoardPointerMove(e) {
   if (isLassoing) {
     const pt = getBoardPointFromEvent(e);
@@ -3688,7 +3241,7 @@ window.addEventListener('paste', (ev)=>{
 });
 
 
-/* Attach item behaviors */
+/// --- ITEM INTERACTIONS --- 
 function attachItemBehaviors(node){
   node.addEventListener('pointerdown', (e)=>{
     // Only handle left mouse button (button 0) for selection
