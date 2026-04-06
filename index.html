@@ -1168,7 +1168,7 @@ function finalizeStrokeGroup() {
 function createSnapshot() {
   const items = [];
 
-  // --- Capture images & text (Removed :not([data-imported]) exclusion)
+  // --- Capture images & text
   board.querySelectorAll('.item').forEach(n => {
     // Read from computed style if inline style is empty, to ensure we get the current position
     const computedStyle = window.getComputedStyle(n);
@@ -1186,7 +1186,6 @@ function createSnapshot() {
     };
 
     // For text items, exclude width/height from snapshots to prevent resizing from creating undo history
-    // Width/height will be preserved only through export/import
     if (n.dataset.type !== 'text') {
       obj.width = parseFloat(width);
       obj.height = parseFloat(height);
@@ -1198,13 +1197,11 @@ function createSnapshot() {
       const h = parseFloat(height);
       obj.src = img?.src || '';
       obj.opacity = parseFloat(img?.style.opacity || '1');
-      // Ensure dimensions are valid (at least 20x20)
       obj.width = Math.max(20, isNaN(w) ? 240 : w);
       obj.height = Math.max(20, isNaN(h) ? 180 : h);
     } else if (n.dataset.type === 'text') {
       const p = n.querySelector('.text-item');
       obj.text = p?.innerText || '';
-      // Store current dimensions separately so they're preserved but don't trigger undo on resize
       obj.width = parseFloat(width);
       obj.height = parseFloat(height);
       obj.style = {
@@ -1222,10 +1219,14 @@ function createSnapshot() {
     items.push(obj);
   });
 
-  // --- Capture strokes (including imported ones, since they may have been modified)
+  // --- Capture strokes 
   board.querySelectorAll('.stroke-wrapper').forEach(svgWrapper => {
     const g = svgWrapper.querySelector('g');
     if (!g) return;
+
+    // FIX: Capture the wrapper's physical position
+    const left = parseFloat(svgWrapper.style.left) || 0;
+    const top = parseFloat(svgWrapper.style.top) || 0;
 
     g.querySelectorAll('.stroke').forEach(p => {
       const pathId = p.dataset.id;
@@ -1244,7 +1245,10 @@ function createSnapshot() {
         hasStartArrow,
         hasEndArrow,
         arrowSize,
-        transform: g.getAttribute('transform') || ''
+        transform: g.getAttribute('transform') || '',
+        // FIX: Keep track of positions in history
+        left: left,
+        top: top
       });
     });
   });
@@ -1270,20 +1274,14 @@ function restoreSnapshot(snapshot) {
   // Clear existing items (including previously imported ones)
   const existingItems = board.querySelectorAll('.item, .stroke-wrapper');
   existingItems.forEach(n => {
-    try {
-      n.remove();
-    } catch(e) {
-      console.warn('Failed to remove item during restore:', e);
-    }
+    try { n.remove(); } catch(e) { console.warn('Failed to remove item:', e); }
   });
 
   // --- Restore each item
   for (const it of snapshot.items || []) {
     if (it.type === 'image') {
       const existing = board.querySelector(`.item[data-id="${it.id}"]`);
-      if (existing) {
-        try { existing.remove(); } catch(e) {}
-      }
+      if (existing) { try { existing.remove(); } catch(e) {} }
       
       const item = createImageItem(it.src || '', it.left ?? 80, it.top ?? 80, it.width ?? 240, {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true, opacity: it.opacity ?? 1
@@ -1299,16 +1297,13 @@ function restoreSnapshot(snapshot) {
 
     else if (it.type === 'text') {
       const existing = board.querySelector(`.item[data-id="${it.id}"]`);
-      if (existing) {
-        try { existing.remove(); } catch(e) {}
-      }
+      if (existing) { try { existing.remove(); } catch(e) {} }
       
       const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
         id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
       });
       item.style.zIndex = it.z || 0;
 
-      // Capture dimensions for fitText
       const w = it.width || 200;
       const h = it.height || 100;
       item.style.width = w + 'px';
@@ -1325,23 +1320,24 @@ function restoreSnapshot(snapshot) {
         p.style.textAlign = it.style.textAlign || 'left';
         p.style.fontFamily = it.style.fontFamily || 'inherit';
 
-        if (typeof fitText === 'function') {
-           fitText(p, w, h);
-        }
+        if (typeof fitText === 'function') fitText(p, w, h);
       }
     }
 
     else if (it.type === 'stroke') {
       const existing = board.querySelector(`.stroke-wrapper[data-id="${it.id}"]`);
-      if (existing) {
-        try { existing.remove(); } catch(e) {}
-      }
+      if (existing) { try { existing.remove(); } catch(e) {} }
       
       const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svgWrapper.classList.add('stroke-wrapper');
-      svgWrapper.dataset.type = 'stroke-wrapper';
+      // FIX: Changed from 'stroke-wrapper' back to 'stroke-group'
+      svgWrapper.dataset.type = 'stroke-group'; 
       svgWrapper.dataset.id = it.id;
       svgWrapper.style.zIndex = it.z || 0;
+
+      // FIX: Restore the physical position
+      if (it.left) svgWrapper.style.left = it.left + 'px';
+      if (it.top) svgWrapper.style.top = it.top + 'px';
 
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       if (it.transform) g.setAttribute('transform', it.transform);
@@ -2437,9 +2433,10 @@ function startDragHtml(node, e){
   state.selectedIds.forEach(id => {
     const n = findNodeById(id);
     if (!n) return;
-    // --- MODIFIED: Check for stroke-group (SVG wrapper) ---
-    if (n.dataset.type === 'stroke-group') {
-      const g = n.querySelector('g'); // Find the <g> inside
+    
+    // FIX: Check for both dataset types defensively
+    if (n.dataset.type === 'stroke-group' || n.dataset.type === 'stroke-wrapper') {
+      const g = n.querySelector('g'); 
       const orig = g.getAttribute('transform') || '';
       const parsed = parseTransform(orig);
       dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
@@ -2455,7 +2452,7 @@ function startDragHtml(node, e){
   board.setPointerCapture(e.pointerId);
 }
 
-// --- MODIFIED: Unified drag handler for both SVG and HTML items, applying additive transforms for SVG and style adjustments for HTML ---
+// --- MODIFIED: Unified drag handler for both SVG and HTML items ---
 function startDragSvg(element, e){
   e.preventDefault();
   const pt = getBoardPointFromEvent(e);
@@ -2464,17 +2461,14 @@ function startDragSvg(element, e){
     const n = findNodeById(id);
     if (!n) return;
     
-    // Determine what type of element we're dealing with and get the <g> to transform
     let gElement = null;
     
-    if (n.dataset.type === 'stroke-group') {
-      // It's the SVG wrapper, get the <g> inside
+    // FIX: Check for both dataset types defensively
+    if (n.dataset.type === 'stroke-group' || n.dataset.type === 'stroke-wrapper') {
       gElement = n.querySelector('g');
     } else if (n.dataset.type === 'stroke') {
-      // It's an individual path, find its parent <g>
       gElement = n.closest('g');
     } else {
-      // Not an SVG stroke, handle as HTML
       dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
       return;
     }
@@ -3361,12 +3355,12 @@ function deleteSelected() {
 /* Layers panel */
 function collectAllItems(){
   const items = [];
-  // --- MODIFIED: Selects all items from board ---
   board.querySelectorAll('.item, .stroke-wrapper').forEach(n=>{
     let title = 'Item';
     if (n.dataset.type === 'image') title = 'Image';
     else if (n.dataset.type === 'text') title = 'Text';
-    else if (n.dataset.type === 'stroke-group') title = 'Drawing';
+    // FIX: Check for both dataset types defensively
+    else if (n.dataset.type === 'stroke-group' || n.dataset.type === 'stroke-wrapper') title = 'Drawing';
     
     items.push({ id: n.dataset.id, type: n.dataset.type, z: parseInt(n.style.zIndex||0), title: title });
   });
