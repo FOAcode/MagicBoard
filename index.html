@@ -746,8 +746,8 @@
       
       <div id="text-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
         <label style="font-size:13px">Opacity:</label>
-        <input type="range" id="toolbar-text-bg-alpha" min="0" max="1" step="0.05" value="0" style="width:200px">
-        <span id="toolbar-text-bg-alpha-value" style="font-size:13px;min-width:36px">0.00</span>
+        <input type="range" id="toolbar-text-bg-alpha" min="0" max="100" step="1" value="0" style="width:200px">
+        <span id="toolbar-text-bg-alpha-value" style="font-size:13px;min-width:36px">0%</span>
         <div id="quick-text-styles" style="display:flex;gap:6px;align-items:center;margin-left:8px">
           <button class="tool-btn" id="tb-text-bold" title="Bold" style="padding: 6px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1852,7 +1852,6 @@ const rgb = hexToRgbCached(state.text.bgColor);
 }
 
 /* SVG Stroke creation */
-// --- MODIFIED: Creates a new SVG wrapper for each stroke group ---
 function startStroke(x, y) {
   const uid = id('stroke-group');
   currentSvgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1871,38 +1870,42 @@ function startStroke(x, y) {
 
   const path = document.createElementNS('http://www.w3.org/2000/svg','path');
   path.classList.add('stroke');
-  
-  // ADD THIS LINE: Disable blur while we are drawing
   path.classList.add('is-drawing'); 
 
   path.dataset.type = 'stroke';
   path.dataset.id = id('stroke');
+  
+  // FIXED: Added "L x y" to create an immediate visible dot on click
+  const xf = x.toFixed(1);
+  const yf = y.toFixed(1);
   path.points = [{x, y}];
-  path.setAttribute('d', `M ${x.toFixed(1)} ${y.toFixed(1)}`);
+  path.setAttribute('d', `M ${xf} ${yf} L ${xf} ${yf}`);
+  
   path.setAttribute('stroke', state.stroke.color);
   path.setAttribute('stroke-width', state.stroke.width);
+  // Ensure round caps are set so the dot is visible as a circle
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
 
   currentStrokeGroup.appendChild(path);
   makePathSelectable(path);
   return path;
 }
 
-
 /**
  * Highly optimized incremental path drawing
- * - Uses squared distance for jitter check (faster than Math.hypot)
- * - Eliminates O(n) array shifting
- * - Minimizes object property lookups
  */
 function addPointToPath(path, x, y) {
   if (!path) return;
   
-  // Use a minimal state object attached to the path to avoid array overhead
   if (!path._drawState) {
+    const xf = x.toFixed(1);
+    const yf = y.toFixed(1);
     path._drawState = {
       lastX: x,
       lastY: y,
-      baseD: `M ${x.toFixed(1)} ${y.toFixed(1)}`,
+      // FIXED: Match the initial "dot" state so it doesn't flicker/disappear on first move
+      baseD: `M ${xf} ${yf} L ${xf} ${yf}`,
       pointsCount: 1
     };
     path.points = [{ x, y }];
@@ -1916,11 +1919,9 @@ function addPointToPath(path, x, y) {
   const distSq = dx * dx + dy * dy;
 
   // 1. Squared Distance Threshold: (1.5 * 1.5 = 2.25)
-  // Faster than Math.hypot because it avoids Math.sqrt()
   if (distSq < 2.25) return;
 
   // 2. Optimized Dynamic Weight
-  // Increasing the base weight to 0.4 makes it feel even more "instant"
   const dist = Math.sqrt(distSq);
   const weight = Math.max(0.4, Math.min(0.98, dist / 30));
   
@@ -1928,13 +1929,11 @@ function addPointToPath(path, x, y) {
   const smoothedY = s.lastY + dy * weight;
 
   // 3. Incremental Bezier Logic
-  // We only care about the previous point and the current one
   if (s.pointsCount >= 2) {
     const midX = (s.lastX + smoothedX) * 0.5;
     const midY = (s.lastY + smoothedY) * 0.5;
     
-    // Append the "locked" Quadratic segment to our base cache
-    // Using template literals is faster for string construction
+    // Append segments using template literals for speed
     s.baseD += ` Q ${s.lastX.toFixed(1)} ${s.lastY.toFixed(1)}, ${midX.toFixed(1)} ${midY.toFixed(1)}`;
   }
 
@@ -1943,11 +1942,10 @@ function addPointToPath(path, x, y) {
   s.lastY = smoothedY;
   s.pointsCount++;
   
-  // Push to the array only for the final data (no shift() call here)
   if (path.points) path.points.push({ x: smoothedX, y: smoothedY });
 
   // 4. Draw the live "tail"
-  // We draw a line from the last midpoint to the current cursor position
+  // This appends the live line-to following the cursor to the smoothed base path
   path.setAttribute('d', `${s.baseD} L ${smoothedX.toFixed(1)} ${smoothedY.toFixed(1)}`);
 }
 
@@ -2040,95 +2038,125 @@ function generateCornerArc(p1, p2, p3, radiusMultiplier = 1.5) {
   };
 }
 
-/* Selection management */
-function selectItem(idToSelect, addToSelection = false){
+// --- Added addToSelection parameter to control whether to clear existing selection ---
+function selectItem(idToSelect, addToSelection = false) {
+  // 1. Manage selection state
   if (!addToSelection) {
     clearSelection();
   }
-  if(!idToSelect) return;
-  state.selectedIds.add(idToSelect);
+  if (!idToSelect) return;
+
   const node = findNodeById(idToSelect);
-  if(!node) {
-    state.selectedIds.delete(idToSelect);
-    return;
-  }
+  if (!node) return;
+
+  state.selectedIds.add(idToSelect);
   node.classList.add('selected');
 
-  // Show/hide transparency slider when an image is selected
-  const transparencyDiv = el('#image-transparency');
-  const transparencySlider = el('#transparency-slider');
-  if (node.dataset.type === 'image' && !addToSelection) {
-    if (transparencyDiv.style.display !== 'flex') transparencyDiv.style.display = 'flex';
-    // Get current opacity or default to 100
-    const img = node.querySelector('img');
-    const opacity = img ? parseFloat(img.style.opacity || '1') * 100 : 100;
-    if (transparencySlider.value !== opacity) transparencySlider.value = opacity;
-    el('#transparency-value').textContent = Math.round(opacity) + '%';
-  } else if (!addToSelection || !Array.from(state.selectedIds).some(id => {
-    const n = findNodeById(id);
-    return n && n.dataset.type === 'image';
-  })) {
-    if (transparencyDiv.style.display !== 'none') transparencyDiv.style.display = 'none';
-  }
-  // --- MODIFIED: Handle handle creation only for HTML items ---
-  if(node.dataset.type === 'image'){
-    if(!node.querySelector('.handle')){
-      const h = document.createElement('div'); h.className='handle'; node.appendChild(h);
+  // 2. Handle Resize Handles (Item-specific UI)
+  if (node.dataset.type === 'image') {
+    if (!node.querySelector('.handle')) {
+      const h = document.createElement('div');
+      h.className = 'handle';
       h.dataset.resizeDir = 'se';
+      node.appendChild(h);
       h.addEventListener('pointerdown', startResizePointer);
     }
-  } else if (node.dataset.type === 'text'){
+  } else if (node.dataset.type === 'text') {
+    // Remove default corner handle if it exists from older logic
     const cornerHandle = node.querySelector('.handle:not(.handle-e):not(.handle-s)');
-    if(cornerHandle) cornerHandle.remove();
+    if (cornerHandle) cornerHandle.remove();
 
-    if(!node.querySelector('.handle-e')){
+    // Add Side Handle (East)
+    if (!node.querySelector('.handle-e')) {
       const h_e = document.createElement('div');
-      h_e.className='handle handle-e';
+      h_e.className = 'handle handle-e';
       h_e.dataset.resizeDir = 'e';
       node.appendChild(h_e);
       h_e.addEventListener('pointerdown', startResizePointer);
     }
-    if(!node.querySelector('.handle-s')){
+    // Add Bottom Handle (South)
+    if (!node.querySelector('.handle-s')) {
       const h_s = document.createElement('div');
-      h_s.className='handle handle-s';
+      h_s.className = 'handle handle-s';
       h_s.dataset.resizeDir = 's';
       node.appendChild(h_s);
       h_s.addEventListener('pointerdown', startResizePointer);
     }
   }
-  
+
+  // 3. Sync State properties if single-selecting a text item
   if (!addToSelection && node.dataset.type === 'text') {
     const textDiv = node.querySelector('.text-item');
-    const styles = window.getComputedStyle(textDiv);
-    
-    state.text.bold = styles.fontWeight === 'bold' || parseInt(styles.fontWeight) >= 700;
-    state.text.italic = styles.fontStyle === 'italic';
-    state.text.underline = styles.textDecoration.includes('underline');
-    state.text.crossed = styles.textDecoration.includes('line-through');
-    state.text.fontSize = parseFloat(styles.fontSize) || state.text.fontSize;
-    
-    const colorRgb = parseRgba(styles.color);
-    state.text.color = rgbToHex(colorRgb.r, colorRgb.g, colorRgb.b);
-    
-    const bgRgb = parseRgba(styles.backgroundColor);
-    state.text.bgColor = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
-    state.text.bgAlpha = bgRgb.a;
-    state.text.align = styles.textAlign || 'left';
-    // Read fontFamily from data attribute (more reliable than computed style)
-    state.text.fontFamily = node.dataset.fontFamily || textDiv.style.fontFamily || 'inherit';
+    if (textDiv) {
+      const styles = window.getComputedStyle(textDiv);
+      state.text.bold = styles.fontWeight === 'bold' || parseInt(styles.fontWeight) >= 700;
+      state.text.italic = styles.fontStyle === 'italic';
+      state.text.underline = styles.textDecoration.includes('underline');
+      state.text.crossed = styles.textDecoration.includes('line-through');
+      state.text.fontSize = parseFloat(styles.fontSize) || state.text.fontSize;
+      
+      const colorRgb = parseRgba(styles.color);
+      state.text.color = rgbToHex(colorRgb.r, colorRgb.g, colorRgb.b);
+      
+      const bgRgb = parseRgba(styles.backgroundColor);
+      state.text.bgColor = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
+      state.text.bgAlpha = bgRgb.a;
+      state.text.align = styles.textAlign || 'left';
+      state.text.fontFamily = node.dataset.fontFamily || textDiv.style.fontFamily || 'inherit';
 
-    updateTextPopupUI();
+      updateTextPopupUI();
+    }
   }
-    try{ updateToolbarTextUI(); }catch(e){}
 
-  // Show/hide text toolbar based on selection (show if any selected item is text)
+  // 4. QUICKBAR VISIBILITY LOGIC (Prioritization)
+  const transparencyDiv = el('#image-transparency');
   const textToolbar = el('#text-toolbar');
-  if (textToolbar) {
-    const anyTextSelected = Array.from(state.selectedIds).some(id => { const n = findNodeById(id); return n && n.dataset.type === 'text'; });
-    textToolbar.style.display = anyTextSelected ? 'flex' : 'none';
-    if (anyTextSelected) updateToolbarTextUI();
+  const strokeToolbar = el('#stroke-toolbar');
+
+  // Gather current selection types
+  const selectedNodes = Array.from(state.selectedIds)
+    .map(id => findNodeById(id))
+    .filter(n => n !== null);
+
+  const hasText = selectedNodes.some(n => n.dataset.type === 'text');
+  const hasImage = selectedNodes.some(n => n.dataset.type === 'image');
+  const hasStroke = selectedNodes.some(n => n.dataset.type === 'stroke' || n.dataset.type === 'stroke-wrapper');
+
+  // Mutual Exclusion logic: Only one toolbar should show at a time
+  if (hasText) {
+    // Show Text UI, hide Image & Stroke
+    if (textToolbar) textToolbar.style.display = 'flex';
+    if (transparencyDiv) transparencyDiv.style.display = 'none';
+    if (strokeToolbar) strokeToolbar.style.display = 'none';
+    updateToolbarTextUI();
+  } else if (hasImage) {
+    // Show Image UI, hide Text & Stroke
+    if (transparencyDiv) transparencyDiv.style.display = 'flex';
+    if (textToolbar) textToolbar.style.display = 'none';
+    if (strokeToolbar) strokeToolbar.style.display = 'none';
+    
+    // Sync slider to the first selected image
+    const firstImgNode = selectedNodes.find(n => n.dataset.type === 'image');
+    const img = firstImgNode ? firstImgNode.querySelector('img') : null;
+    const opacity = img ? parseFloat(img.style.opacity || '1') * 100 : 100;
+    const transparencySlider = el('#transparency-slider');
+    if (transparencySlider) {
+      transparencySlider.value = opacity;
+      el('#transparency-value').textContent = Math.round(opacity) + '%';
+    }
+  } else if (hasStroke) {
+    // Show Stroke UI, hide Text & Image
+    if (strokeToolbar) strokeToolbar.style.display = 'flex';
+    if (textToolbar) textToolbar.style.display = 'none';
+    if (transparencyDiv) transparencyDiv.style.display = 'none';
+    updateToolbarStrokeUI();
+  } else {
+    // Hide all
+    if (textToolbar) textToolbar.style.display = 'none';
+    if (transparencyDiv) transparencyDiv.style.display = 'none';
+    if (strokeToolbar) strokeToolbar.style.display = 'none';
   }
-  
+
   refreshLayers();
   checkToolbarOverflow();
 }
@@ -2770,8 +2798,6 @@ function onBoardPointerDown(e) {
       if (straightLineState && !isSingleLineMode) {
         drawing = true;
         board.setPointerCapture?.(e.pointerId);
-        // Don't add point here - we'll add it in onBoardPointerUp
-        // Just prepare for tracking
         if (!straightLineState.points) {
           straightLineState.points = [
             { x: straightLineState.startX, y: straightLineState.startY }
@@ -2782,8 +2808,15 @@ function onBoardPointerDown(e) {
         board.setPointerCapture?.(e.pointerId);
         finalizeStrokeGroup();
         currentPath = startStroke(x, y);
-        const d = `M ${x} ${y}`;
+        
+        // MODIFIED: M x y L x y creates a visible "dot" immediately
+        const d = `M ${x} ${y} L ${x} ${y}`;
         currentPath.setAttribute('d', d);
+        
+        // Update the invisible hit-path so the dot is selectable/movable later
+        const hitPath = currentPath.parentNode ? currentPath.parentNode.querySelector('.stroke-hit') : null;
+        if (hitPath) hitPath.setAttribute('d', d);
+
         straightLineState = {
           startX: x,
           startY: y,
@@ -2803,15 +2836,21 @@ function onBoardPointerDown(e) {
       drawing = true;
       board.setPointerCapture?.(e.pointerId);
       
-      // Temporarily disable arrows for free-hand
       const wasStartArrow = state.stroke.startArrow;
       const wasEndArrow = state.stroke.endArrow;
       state.stroke.startArrow = false;
       state.stroke.endArrow = false;
 
       currentPath = startStroke(x, y);
+      
+      // MODIFIED: M x y L x y creates a visible "dot" immediately for free-hand
+      const d = `M ${x} ${y} L ${x} ${y}`;
+      currentPath.setAttribute('d', d);
+      
+      // Update hit-path for free-hand dot selection
+      const hitPath = currentPath.parentNode ? currentPath.parentNode.querySelector('.stroke-hit') : null;
+      if (hitPath) hitPath.setAttribute('d', d);
 
-      // Restore arrow settings
       state.stroke.startArrow = wasStartArrow;
       state.stroke.endArrow = wasEndArrow;
     }
@@ -2823,27 +2862,22 @@ function onBoardPointerDown(e) {
     const clickedOnHandle = e.target.closest('.handle');
     const clickedOnOtherItem = e.target.closest('.item, .stroke-wrapper, .stroke, .stroke-hit');
 
-    // ✅ If resizing (handle clicked), allow resizing but skip new text creation
     if (clickedOnHandle) return;
 
-    // ✅ If clicking on existing text box, just select it
     if (clickedOnTextItem) {
       const wrapper = clickedOnTextItem.closest('.item');
       selectItem(wrapper.dataset.id);
       return;
     }
 
-    // Prevent selecting underlying elements
     if (clickedOnOtherItem) e.stopPropagation();
 
-    // If a text box is currently active and click is outside, blur it
     const activeText = document.activeElement && document.activeElement.contentEditable === 'true';
     if (activeText) {
       document.activeElement.blur();
       return;
     }
 
-    // Create a new text box at the click position
     clearSelection();
     createTextItem('', x, y);
     return;
@@ -2867,7 +2901,6 @@ function onBoardPointerDown(e) {
         refreshLayers();
         board.setPointerCapture?.(e.pointerId);
       } else {
-        // Rectangular selection mode
         isSelectingRect = true;
         rectSelectStartX = x;
         rectSelectStartY = y;
@@ -2892,7 +2925,7 @@ function onBoardPointerDown(e) {
   }
 }
 
-// --- DRAWING POINTER MOVE HANDLER --- Handles pointer move events on the board during drawing and selection. For drawing, it updates the current path based on the mouse movement, supporting straight line snapping with Shift and angle snapping with Ctrl. It also manages the display of guiding lines when Shift is held for straight line drawing. For selection, it updates the lasso path or rectangular selection area as the mouse moves. The function ensures that drawing and selection interactions are smooth and responsive, providing real-time feedback to the user. It also handles the logic for straight line drawing, including updating the path preview and guiding lines based on the current mouse position and snapping settings.
+// --- DRAWING POINTER MOVE HANDLER --- 
 function onBoardPointerMove(e) {
   if (isLassoing) {
     const pt = getBoardPointFromEvent(e);
@@ -4243,8 +4276,11 @@ function updateToolbarTextUI(){
   if(!toolbarText) return;
   // bg alpha
   const a = (typeof state.text.bgAlpha === 'number') ? state.text.bgAlpha : 0;
-  if(toolbarTextBgAlpha && toolbarTextBgAlpha.value !== a) toolbarTextBgAlpha.value = a;
-  const alphaStr = parseFloat(a).toFixed(2);
+  // Multiply by 100 for the 0-100 slider
+  if(toolbarTextBgAlpha && toolbarTextBgAlpha.value !== (a * 100)) toolbarTextBgAlpha.value = a * 100;
+  
+  // Format as percentage string
+  const alphaStr = Math.round(a * 100) + '%';
   if(toolbarTextBgAlphaValue && toolbarTextBgAlphaValue.textContent !== alphaStr) toolbarTextBgAlphaValue.textContent = alphaStr;
   // styles
   if(quickTextStyles){
@@ -4270,10 +4306,12 @@ function updateToolbarTextUI(){
 if(toolbarTextBgAlpha){
   toolbarTextBgAlpha.addEventListener('pointerdown', (e)=>{ startSliderHistory(); });
   toolbarTextBgAlpha.addEventListener('input', (e)=>{
-    const v = parseFloat(e.target.value);
+    const sliderVal = parseFloat(e.target.value);
+    const v = sliderVal / 100; // Convert 0-100 back to 0-1 for the state
     state.text.bgAlpha = v;
-    if(toolbarTextBgAlphaValue) toolbarTextBgAlphaValue.textContent = v.toFixed(2);
-    // apply live to selected text
+    
+    if(toolbarTextBgAlphaValue) toolbarTextBgAlphaValue.textContent = Math.round(sliderVal) + '%';
+
     state.selectedIds.forEach(id => {
       const node = findNodeById(id);
       if(node && node.dataset.type === 'text'){
