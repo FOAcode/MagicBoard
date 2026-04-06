@@ -2965,6 +2965,9 @@ function onBoardPointerMove(e) {
             marker.appendChild(polygon);
             defs.appendChild(marker);
             currentPath.dataset.arrowSize = arrowSize;
+            
+            // 👇 ADD THIS LINE to attach the definitions to the DOM
+            currentStrokeGroup.appendChild(defs); 
         }
 
         const markerId = `arrow-${currentStrokeGroup.dataset.id}`;
@@ -4437,13 +4440,13 @@ if(arrowSizeInput){
   // arrowSizeInput.addEventListener('change', ()=>{ endSliderHistory(); });
 }
 
-// Initialize arrow controls
+// Initialize arrow controls based on state
 startArrowInput.checked = state.stroke.startArrow;
 endArrowInput.checked = state.stroke.endArrow;
 arrowSizeInput.value = state.stroke.arrowSize;
 arrowSizeLabel.innerText = state.stroke.arrowSize;
 
-// Rounded lines toggle
+// Rounded corners control
 const roundedLinesInput = el('#rounded-lines');
 if (roundedLinesInput) {
   roundedLinesInput.addEventListener('change', (e) => {
@@ -4454,7 +4457,7 @@ if (roundedLinesInput) {
   roundedLinesInput.checked = state.stroke.rounded;
 }
 
-// <-- NEW: Quick toggle for rounded corners -->
+// <-- Quick toggle for rounded corners -->
 const quickRoundedBtn = el('#quick-rounded-lines');
 if (quickRoundedBtn) {
   quickRoundedBtn.addEventListener('click', (e) => {
@@ -4499,7 +4502,7 @@ function updateTextPopupUI() {
     textCrossedBtn.classList.toggle('active', state.text.crossed);
   }
   
-  // --- NEW: Handle alignment buttons ---
+  // --- Handle alignment buttons ---
   const alignBtns = textPopup.querySelectorAll('[data-align]');
   alignBtns.forEach(btn => {
     const shouldBeActive = state.text.align === btn.dataset.align;
@@ -4529,7 +4532,6 @@ function updateTextPopupUI() {
     }
   }
 }
-
 
 // Apply current text settings to all selected text items
 function applyTextSettingsToSelection() {
@@ -4582,7 +4584,7 @@ textUnderlineBtn.addEventListener('click', (e) => {
   applyTextSettingsToSelection();
 });
 
-// Strikethrough/crossed-out button (NEW)
+// <-- Strikethrough button wiring -->
 const textCrossedBtn = el('#text-crossed');
 if(textCrossedBtn){
   textCrossedBtn.addEventListener('click', (e)=>{
@@ -4651,7 +4653,7 @@ if(transparencySliderEl){
   transparencySliderEl.addEventListener('change', (e)=>{ endSliderHistory(); });
 }
 
-// --- Global click handler to close popups when clicking outside ---
+// --- Global Click Listener to Close Popups ---
 document.addEventListener('click', (e) => {
   if (!strokePopup.contains(e.target) && e.target !== strokeSettingsBtn && !e.target.closest('#stroke-settings')) {
     strokePopup.style.display = 'none';
@@ -4686,7 +4688,7 @@ function hideKnownTranslateUI(){
   });
 }
 
-// Best-effort detection of translate extensions by looking for known DOM markers, global variables, or iframes. Not guaranteed to be accurate but should catch common cases.
+// Detects presence of translation extensions by checking for known DOM elements, global variables, and iframes associated with popular translation tools. Wrapped in try-catch to avoid errors from cross-origin access or unexpected DOM structures.
 function detectTranslateExtension(){
   try{
     const hasDomMarker = !!document.querySelector('#google_translate_element') || !!document.querySelector('.goog-te-banner-frame') || !!document.querySelector('.goog-te-banner');
@@ -4696,17 +4698,19 @@ function detectTranslateExtension(){
   }catch(e){ return false; }
 }
 
+// Show the warning message about translation extensions interfering with the whiteboard functionality
 function showExtensionWarning(){
   const w = document.getElementById('ext-warning');
   if(!w) return;
   w.style.display = 'flex';
 }
 
+// Hide the warning message
 function hideExtensionWarning(){
   const w = document.getElementById('ext-warning'); if(!w) return; w.style.display = 'none';
 }
 
-// Wire buttons for the warning banner
+// Listen for clicks on the warning buttons to hide the warning and attempt to restore functionality by hiding known translate UI elements.
 document.addEventListener('click', (e)=>{
   if (e.target && e.target.id === 'ext-warning-hide') {
     hideKnownTranslateUI();
@@ -4717,7 +4721,7 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-// Run detection at init and periodically in case an extension injects UI later.
+// Run detection on init and for a short period after to catch extensions that load late
 function scheduleExtensionDetection(){
   try{
     if (detectTranslateExtension()) {
@@ -4725,7 +4729,7 @@ function scheduleExtensionDetection(){
       hideKnownTranslateUI();
     }
   }catch(e){}
-  // Only check a few times (3 checks at 2-second intervals = 6 seconds total)
+  // Only check a few times (3 checks at 2-second intervals = 6 seconds total) to avoid performance issues from long-running intervals, while still catching extensions that load after a delay.
   let checks = 0;
   const maxChecks = 3;
   const timerId = setInterval(()=>{
@@ -4789,7 +4793,7 @@ document.getElementById('bring-forward').addEventListener('click', ()=>{
   pushHistory();
 });
 
-// --- MODIFIED: Simplified for unified Z and fixed to ensure selected items maintain relative order and are placed just below all unselected items ---
+// Similar logic for send backward, but we place items just below all unselected items while maintaining their relative order
 document.getElementById('send-back').addEventListener('click', ()=>{
   if(state.selectedIds.size === 0) return;
   
@@ -4820,7 +4824,7 @@ document.getElementById('send-back').addEventListener('click', ()=>{
   pushHistory();
 });
 
-// Delete selected items
+// --- Delete Wiring ---
 document.getElementById('delete-item').addEventListener('click', () => {
   isDeleting = true; // <-- SET FLAG
   Array.from(state.selectedIds).forEach(id => {
@@ -4843,7 +4847,7 @@ if (importBtn) importBtn.addEventListener('click', ()=>{
   inp.click();
 });
 
-// --- Global keyboard shortcuts ---
+// --- Keyboard Shortcuts ---
 window.addEventListener('keydown', (e)=>{
   const isInputFocused = !!document.activeElement && (document.activeElement.isContentEditable || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName));
 
@@ -4886,6 +4890,8 @@ window.addEventListener('keydown', (e)=>{
     e.preventDefault(); redo();
   }
 });
+
+// Hide guides when Shift is released, and mark straight line as interrupted if it was in progress
 window.addEventListener('keyup', (e) => {
     if (e.key === 'Shift') {
         drawingGuides.style.display = 'none';
@@ -4904,7 +4910,7 @@ function debounce(func, wait) {
   };
 }
 
-// Apply debounce to zoom and pan handlers to improve performance during rapid events
+// Use debounce for scroll and zoom events to prevent excessive updates
 setTool('select');
 updateSelectionModeUI();
 applyScale();
