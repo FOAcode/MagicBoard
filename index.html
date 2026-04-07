@@ -593,12 +593,22 @@
       display: none;
   }
 
-  /* Added to shrink main tool buttons when toolbar is super condensed */
+  /* Shrink the fixed width of the groups when super condensed */
+  .toolbar-super-condensed #select-tool-group,
+  .toolbar-super-condensed #draw-tool-group,
+  .toolbar-super-condensed #text-tool-group {
+    min-width: auto;
+  }
+
+  /* Make the main tool buttons themselves narrower (about 2 letters wide) */
   .toolbar-super-condensed #tool-select,
   .toolbar-super-condensed #tool-draw,
   .toolbar-super-condensed #tool-text {
-    min-width: 38px;
-    width: 38px;
+    min-width: 28px;
+    width: 28px;
+    padding: 5px 4px;
+    justify-content: center;
+    text-align: center;
   }
 
   /* Selection mode menu styles */
