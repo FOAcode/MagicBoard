@@ -660,9 +660,85 @@
   .selection-mode-item.lasso::before {
     border-radius: 50%;
   }
+
+  /* When space is tight (Select, Draw, Text buttons are shortened) */
+  .toolbar-condensed #transparency-slider, 
+  .toolbar-condensed #toolbar-stroke-width, 
+  .toolbar-condensed #toolbar-text-bg-alpha {
+    width: 110px !important;
+  }
+
+  /* When the toolbar is extremely tight */
+  .toolbar-super-condensed #transparency-slider, 
+  .toolbar-super-condensed #toolbar-stroke-width, 
+  .toolbar-super-condensed #toolbar-text-bg-alpha {
+    width: 70px !important;
+  }
+
+  /* Optional: Hide the "Width:" and "Opacity:" labels to save even more space */
+  .toolbar-super-condensed #stroke-toolbar label,
+  .toolbar-super-condensed #image-transparency label,
+  .toolbar-super-condensed #text-toolbar label {
+    display: none;
+  }
+
+
+  /* Loading Overlay - Upgraded */
+  #loading-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: rgba(255, 255, 255, 0.9); /* Slightly more opaque */
+    backdrop-filter: blur(10px);        /* Softer blur */
+    display: none; 
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.4s ease-out; /* Enable the fade-out */
+  }
+
+  /* Modern, Professional Text */
+  .loading-text {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #2d3748;
+    letter-spacing: -0.02em;
+    margin-top: 24px;
+    font-family: 'Open Sans', sans-serif;
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid #e2e8f0;
+    border-top: 3px solid var(--accent);
+    border-radius: 50%;
+    /* Cubic-bezier makes the spin feel higher quality than "linear" */
+    animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Class to trigger the fade out */
+  .overlay-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .is-loading-content #board {
+    opacity: 0;
+  }
 </style>
 </head>
 <body>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Loading Board</div>
+  </div>
   <div class="toolbar" role="toolbar" aria-label="tools">
     <div class="tool-btn-group" id="select-tool-group">
       <button class="tool-btn" data-tool="select" id="tool-select" title="Select (V)">Select</button>
@@ -3554,6 +3630,16 @@ async function exportWhiteboard(){
 }
 
 async function importWhiteboard(file) {
+  const startTime = Date.now();
+  const MIN_DELAY = 1000; // Enforce 1 second for professional feel
+
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    overlay.classList.remove('overlay-hidden');
+  }
+  document.body.classList.add('is-loading-content');
+
   try {
     const zip = await JSZip.loadAsync(file);
     const txt = await zip.file('whiteboard.json').async('text');
@@ -3563,23 +3649,20 @@ async function importWhiteboard(file) {
     board.querySelectorAll('.item, .stroke-wrapper').forEach(n => n.remove());
     svg.innerHTML = '';
 
-    // Restore state carefully to avoid replacing runtime objects
+    // Restore state
     const savedState = data.state || {};
     if (typeof savedState.tool === 'string') state.tool = savedState.tool;
     if (typeof savedState.selectionMode === 'string') state.selectionMode = savedState.selectionMode;
     if (typeof savedState.scale === 'number') state.scale = savedState.scale;
-    if (typeof savedState.nextZ === 'number') state.nextZ = savedState.nextZ;
+    state.nextZ = data.nextZ || savedState.nextZ || Z_FLOOR + 10;
     state.stroke = Object.assign({}, state.stroke, savedState.stroke || {});
     state.text = Object.assign({}, state.text, savedState.text || {});
     state.pointer = Object.assign({ x: 0, y: 0 }, savedState.pointer || {});
-    
-    if (Array.isArray(savedState.selectedIds)) state.selectedIds = new Set(savedState.selectedIds);
-    else state.selectedIds = new Set();
-    
-    state.nextZ = data.nextZ || state.nextZ || Z_FLOOR + 10;
+    state.selectedIds = new Set(Array.isArray(savedState.selectedIds) ? savedState.selectedIds : []);
 
     const importOptions = { skipSelect: true, skipFocus: true, skipRefresh: true, skipHistory: true };
 
+    // Reconstruct items
     for (const it of (data.items || [])) {
       if (it.type === 'image') {
         const imgBlobFile = zip.file(`images/image-${it.imageIndex}`);
@@ -3589,21 +3672,16 @@ async function importWhiteboard(file) {
           url = URL.createObjectURL(b);
         }
         const item = createImageItem(url, it.left ?? 80, it.top ?? 80, it.width ?? 240, {
-          ...importOptions,
-          id: it.id,
-          opacity: it.opacity !== undefined ? it.opacity : 1
+          ...importOptions, id: it.id, opacity: it.opacity ?? 1
         });
         item.style.zIndex = it.z;
-        // FIX: Explicitly set height immediately so the first snapshot captures it correctly
-        if (it.height && it.height > 0) {
-            item.style.height = it.height + 'px';
-        }
+        if (it.height) item.style.height = it.height + 'px';
+
       } else if (it.type === 'text') {
         const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
         item.style.zIndex = it.z;
         if (it.width) item.style.width = it.width + 'px';
         if (it.height) item.style.height = it.height + 'px';
-
         const p = item.querySelector('.text-item');
         if (it.style) {
           p.style.fontWeight = it.style.bold ? 'bold' : 'normal';
@@ -3620,6 +3698,7 @@ async function importWhiteboard(file) {
         fitText(p, it.width, it.height);
 
       } else if (it.type === 'stroke-group') {
+        // --- RESTORED: Exact, correct stroke logic ---
         const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svgWrapper.classList.add('stroke-wrapper');
         svgWrapper.dataset.id = it.id;
@@ -3632,6 +3711,7 @@ async function importWhiteboard(file) {
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         g.dataset.id = it.id;
 
+        // Restore Arrow Markers
         if (it.markers && it.markers.length) {
           const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
           it.markers.forEach(m => {
@@ -3659,6 +3739,7 @@ async function importWhiteboard(file) {
           g.setAttribute('transform', it.transform);
         }
         svgWrapper.appendChild(g);
+        
         (it.paths || []).forEach(p => {
           const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           path.classList.add('stroke');
@@ -3667,6 +3748,7 @@ async function importWhiteboard(file) {
           path.setAttribute('d', p.d);
           path.setAttribute('stroke', it.color);
           path.setAttribute('stroke-width', it.width);
+          
           if (p.markerStart) path.setAttribute('marker-start', p.markerStart);
           if (p.markerEnd) path.setAttribute('marker-end', p.markerEnd);
 
@@ -3682,36 +3764,38 @@ async function importWhiteboard(file) {
       }
     }
 
+    // Finalize Layout
     clearSelection();
     refreshLayers();
     setTool('select');
     updateSelectionModeUI();
     
-    // --- ADDED REFIT LOGIC ---
-    const hasContent = board.querySelectorAll('.item, .stroke-wrapper').length > 0;
-    if (hasContent) {
-      refitToContent(); // First refit
+    // Zoom/Center perfectly behind the scenes
+    refitToContent();
+    setTimeout(() => refitToContent(), 50);
+
+    // Fade out logic
+    const elapsedTime = Date.now() - startTime;
+    const remainingTime = Math.max(0, MIN_DELAY - elapsedTime);
+
+    setTimeout(() => {
+      if (overlay) overlay.classList.add('overlay-hidden');
+      document.body.classList.remove('is-loading-content');
+
       setTimeout(() => {
-        refitToContent(); // Second refit after layout settles
-      }, 50);
-    }
-    // -------------------------
+        if (overlay) overlay.style.display = 'none';
+      }, 400);
+    }, remainingTime);
 
     undoStack = [];
     redoStack = [];
     pushHistory();
+
   } catch (err) {
     console.error('Import failed:', err);
-    const btn = document.getElementById('import-json');
-    if (btn) {
-      const oldTxt = btn.querySelector('span').innerText;
-      btn.querySelector('span').innerText = 'Failed!';
-      btn.style.color = 'red';
-      setTimeout(() => {
-        btn.querySelector('span').innerText = oldTxt;
-        btn.style.color = '';
-      }, 2000);
-    }
+    if (overlay) overlay.style.display = 'none';
+    document.body.classList.remove('is-loading-content');
+    alert("Import failed: " + err.message);
   }
 }
 
@@ -4883,9 +4967,21 @@ document.getElementById('delete-item').addEventListener('click', () => {
 const exportBtn = document.getElementById('export-json');
 const importBtn = document.getElementById('import-json');
 if (exportBtn) exportBtn.addEventListener('click', ()=> exportWhiteboard());
-if (importBtn) importBtn.addEventListener('click', ()=>{
-  const inp = document.createElement('input'); inp.type='file'; inp.accept='.wb';
-  inp.onchange = ()=> { if(inp.files.length > 0) importWhiteboard(inp.files[0]); };
+if (importBtn) importBtn.addEventListener('click', () => {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.wb';
+  inp.onchange = () => {
+    if (inp.files.length > 0) {
+      // 1. Show the loading screen and hide the board jumpiness
+      const overlay = document.getElementById('loading-overlay');
+      overlay.style.display = 'flex';
+      document.body.classList.add('is-loading-content');
+
+      // 2. Start the import
+      importWhiteboard(inp.files[0]);
+    }
+  };
   inp.click();
 });
 
