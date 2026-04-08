@@ -732,6 +732,14 @@
   .is-loading-content #board {
     opacity: 0;
   }
+
+  /* Styling for the active toggle state */
+  #quick-circle-transform.active {
+      background: #dbeafe !important; /* Light blue background */
+      border-color: #93c5fd !important;
+      color: #1e40af !important;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
+  }
 </style>
 </head>
 <body>
@@ -811,25 +819,25 @@
             <button class="tool-btn" data-color="#06b6d4" title="Cyan" style="width:28px;height:28px;padding:0;border-radius:6px;background:#06b6d4;border:1px solid rgba(0,0,0,0.08)"></button>
           </div>
         </div>
-        <div id="quick-arrow-toggle" class="tool-btn-group" style="margin-left: 8px;">
+        <div id="quick-arrow-toggle" class="tool-btn-group" style="margin-left: 4px;">
           <button class="tool-btn" id="quick-start-arrow" title="Arrow at start" style="padding: 6px;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 19V5M5 12l7-7 7 7"/>
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
               </svg>
           </button>
           <button class="tool-btn" id="quick-end-arrow" title="Arrow at end" style="padding: 6px;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 5v14M19 12l-7 7-7-7"/>
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
               </svg>
           </button>
         </div>
-        <button class="tool-btn" id="quick-rounded-lines" title="Rounded Corners" style="margin-left: 8px; padding: 6px;">
+        <button class="tool-btn" id="quick-rounded-lines" title="Rounded Corners" style="margin-left: 0px; padding: 6px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/>
+            <path d="M7 5h7a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7"/>
           </svg>
         </button>
         
-        <button class="tool-btn" id="quick-circle-transform" title="Transform to Circle" style="margin-left: 4px; padding: 6px;">
+        <button class="tool-btn" id="quick-circle-transform" title="Transform to Circle" style="margin-left: 0px; padding: 6px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9"></circle>
           </svg>
@@ -1234,27 +1242,36 @@ function getBoardPointFromEvent(e){
   return { x, y };
 }
 
-/// --- NEW: Finalize current stroke group by making it selectable and refreshing layers, or removing if empty
+
+// --- Finalize the current stroke group by making it selectable and refreshing layers, or removing it if empty. Also clear selection to avoid leaving the last stroke active.
 function finalizeStrokeGroup() {
-  // Remove the performance class from the current path so blur re-activates
-  if (currentPath) {
-    currentPath.classList.remove('is-drawing');
-  }
-
-  if (currentStrokeGroup) {
-    if (currentStrokeGroup.children.length === 0) {
-      currentSvgWrapper.remove();
-    } else {
-      makeSvgSelectable(currentStrokeGroup);
-      refreshLayers();
+    if (currentPath) {
+        currentPath.classList.remove('is-drawing');
     }
-    currentStrokeGroup = null;
-    currentSvgWrapper = null;
-    currentPath = null; // Ensure reference is cleared
-  }
-  straightLineState = null;
-}
 
+    if (currentStrokeGroup) {
+        // Only transform if the circle button is explicitly active
+        const circleToggle = document.getElementById('quick-circle-transform');
+        const isCircleMode = circleToggle && circleToggle.classList.contains('active');
+
+        if (isCircleMode) {
+            // Keep your existing transformation logic here
+            // transformToCircle(currentStrokeGroup); 
+        }
+
+        if (currentStrokeGroup.children.length === 0) {
+            currentSvgWrapper.remove();
+        } else {
+            makeSvgSelectable(currentStrokeGroup);
+            refreshLayers();
+        }
+        currentStrokeGroup = null;
+        currentSvgWrapper = null;
+        currentPath = null;
+    }
+    straightLineState = null;
+    clearSelection();
+}
 
 /// --- Create snapshot of current board state for undo/redo and export
 function createSnapshot() {
@@ -4599,101 +4616,106 @@ if (quickRoundedBtn) {
   });
 }
 
-// <-- NEW: Quick action to transform stroke into best-fit circle -->
+// Global toggle state
+let autoCircleMode = false;
+
 const quickCircleBtn = document.getElementById('quick-circle-transform');
+
 if (quickCircleBtn) {
-  quickCircleBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    quickCircleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-    let pathsToTransform = [];
+        autoCircleMode = !autoCircleMode;
+        quickCircleBtn.classList.toggle('active', autoCircleMode);
 
-    // 1. If items are specifically selected, gather those paths
-    if (state.selectedIds.size > 0) {
-        state.selectedIds.forEach(id => {
-            const node = findNodeById(id);
-            if (node) {
-                // Find all stroke paths inside this node
-                if (node.tagName && node.tagName.toLowerCase() === 'path') {
-                    pathsToTransform.push(node);
-                } else {
-                    pathsToTransform.push(...node.querySelectorAll('path.stroke'));
-                }
-            }
-        });
-    } 
-    // 2. SMART FALLBACK: If nothing is selected (e.g. you just finished drawing), grab the last drawn line
-    else {
-        const allWrappers = document.querySelectorAll('.stroke-wrapper');
-        if (allWrappers.length > 0) {
-            const lastWrapper = allWrappers[allWrappers.length - 1];
-            pathsToTransform.push(...lastWrapper.querySelectorAll('path.stroke'));
-        } else {
-            // Nothing exists on the board to transform
-            return; 
+        // If mode is turned ON and something is selected, transform it immediately
+        if (autoCircleMode && state.selectedIds.size > 0) {
+            applyCircleTransformToSelected();
+            // We clear selection after manual transform so it's ready for new drawing
+            clearSelection();
         }
-    }
-
-    if (pathsToTransform.length === 0) return;
-
-    let changed = false;
-
-    pathsToTransform.forEach(path => {
-      const length = path.getTotalLength();
-      
-      // Ensure it's not just a tiny accidental dot
-      if (length > 5) { 
-        // 1. Sample points along the path
-        const numSamples = Math.max(15, Math.min(60, Math.floor(length / 4)));
-        let sumX = 0, sumY = 0;
-        const points = [];
-
-        for (let i = 0; i < numSamples; i++) {
-            const pt = path.getPointAtLength((i / numSamples) * length);
-            points.push(pt);
-            sumX += pt.x;
-            sumY += pt.y;
-        }
-
-        // 2. Calculate the centroid (center of the circle)
-        const cx = sumX / numSamples;
-        const cy = sumY / numSamples;
-
-        // 3. Calculate average radius
-        let sumR = 0;
-        for (const pt of points) {
-            sumR += Math.hypot(pt.x - cx, pt.y - cy);
-        }
-        const r = Math.max(1, sumR / numSamples);
-
-        // 4. Generate perfect SVG circle path
-        const newD = `M ${cx.toFixed(1)} ${(cy - r).toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${cx.toFixed(1)} ${(cy + r).toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${cx.toFixed(1)} ${(cy - r).toFixed(1)}`;
-        
-        // 5. Apply the new shape to both the visible stroke and the invisible hit-box
-        path.setAttribute('d', newD);
-        if (path._hitPath) {
-            path._hitPath.setAttribute('d', newD);
-        } else {
-            // Fallback in case the hitpath isn't directly attached yet
-            const hitPath = path.parentNode.querySelector('.stroke-hit');
-            if (hitPath) hitPath.setAttribute('d', newD);
-        }
-        
-        changed = true;
-      }
     });
-    
-    if (changed) {
-        // Save to undo stack
-        pushHistory(); 
-        
-        // Give a quick visual flash to the button to confirm it worked
-        const originalBg = quickCircleBtn.style.background;
-        quickCircleBtn.style.background = '#dbeafe';
-        setTimeout(() => quickCircleBtn.style.background = originalBg, 150);
-    }
-  });
 }
+
+/**
+ * NEW: The "Magic" function. 
+ * We need to call this whenever a stroke is finished.
+ */
+function transformToCircle(path) {
+    if (!path) return;
+    
+    const length = path.getTotalLength();
+    if (length < 5) return; // Ignore dots
+
+    // 1. Sample points
+    const numSamples = Math.max(15, Math.min(60, Math.floor(length / 4)));
+    let sumX = 0, sumY = 0;
+    const points = [];
+    for (let i = 0; i < numSamples; i++) {
+        const pt = path.getPointAtLength((i / numSamples) * length);
+        points.push(pt);
+        sumX += pt.x; sumY += pt.y;
+    }
+
+    // 2. Calculate Center (Centroid)
+    const cx = sumX / numSamples;
+    const cy = sumY / numSamples;
+
+    // 3. Calculate Average Radius
+    let sumR = 0;
+    for (const pt of points) {
+        sumR += Math.hypot(pt.x - cx, pt.y - cy);
+    }
+    const r = Math.max(1, sumR / numSamples);
+
+    // 4. Create Circle Path Data
+    const newD = `M ${cx.toFixed(1)} ${(cy - r).toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${cx.toFixed(1)} ${(cy + r).toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${cx.toFixed(1)} ${(cy - r).toFixed(1)}`;
+    
+    // 5. Update Path and Hitbox
+    path.setAttribute('d', newD);
+    const hitPath = path.parentNode.querySelector('.stroke-hit');
+    if (hitPath) hitPath.setAttribute('d', newD);
+}
+
+// Helper to handle existing selection
+function applyCircleTransformToSelected() {
+    state.selectedIds.forEach(id => {
+        const node = findNodeById(id);
+        if (node) {
+            const paths = node.querySelectorAll('path.stroke');
+            paths.forEach(p => transformToCircle(p));
+        }
+    });
+    pushHistory();
+}
+
+/**
+ * INTEGRATION: Improved Hook
+ */
+const originalFinalize = finalizeStrokeGroup;
+finalizeStrokeGroup = function() {
+    // 1. Keep a reference to the stroke we are currently finishing
+    // In your index.html, 'currentStrokeGroup' is the <g> being drawn
+    const targetStroke = currentStrokeGroup;
+
+    // 2. Run the original code (this attaches the stroke to the board)
+    originalFinalize.apply(this, arguments);
+
+    // 3. Transform ONLY the stroke that was just finished, 
+    // and only if the mode is active.
+    if (autoCircleMode && targetStroke) {
+        const paths = targetStroke.querySelectorAll('path.stroke');
+        paths.forEach(p => transformToCircle(p));
+        
+        // Push to history after transformation so 'Undo' works correctly
+        pushHistory(); 
+    }
+
+    // Optional: Clear selection to prevent the "red" highlight 
+    // from interfering with the next drawing
+    clearSelection();
+};
 
 // --- Text Popup Wiring ---
 const textPopup = el('#text-popup');
