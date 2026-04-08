@@ -828,6 +828,12 @@
             <path d="M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/>
           </svg>
         </button>
+        
+        <button class="tool-btn" id="quick-circle-transform" title="Transform to Circle" style="margin-left: 4px; padding: 6px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"></circle>
+          </svg>
+        </button>
       </div>
       
       <div id="text-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
@@ -4593,6 +4599,101 @@ if (quickRoundedBtn) {
   });
 }
 
+// <-- NEW: Quick action to transform stroke into best-fit circle -->
+const quickCircleBtn = document.getElementById('quick-circle-transform');
+if (quickCircleBtn) {
+  quickCircleBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    let pathsToTransform = [];
+
+    // 1. If items are specifically selected, gather those paths
+    if (state.selectedIds.size > 0) {
+        state.selectedIds.forEach(id => {
+            const node = findNodeById(id);
+            if (node) {
+                // Find all stroke paths inside this node
+                if (node.tagName && node.tagName.toLowerCase() === 'path') {
+                    pathsToTransform.push(node);
+                } else {
+                    pathsToTransform.push(...node.querySelectorAll('path.stroke'));
+                }
+            }
+        });
+    } 
+    // 2. SMART FALLBACK: If nothing is selected (e.g. you just finished drawing), grab the last drawn line
+    else {
+        const allWrappers = document.querySelectorAll('.stroke-wrapper');
+        if (allWrappers.length > 0) {
+            const lastWrapper = allWrappers[allWrappers.length - 1];
+            pathsToTransform.push(...lastWrapper.querySelectorAll('path.stroke'));
+        } else {
+            // Nothing exists on the board to transform
+            return; 
+        }
+    }
+
+    if (pathsToTransform.length === 0) return;
+
+    let changed = false;
+
+    pathsToTransform.forEach(path => {
+      const length = path.getTotalLength();
+      
+      // Ensure it's not just a tiny accidental dot
+      if (length > 5) { 
+        // 1. Sample points along the path
+        const numSamples = Math.max(15, Math.min(60, Math.floor(length / 4)));
+        let sumX = 0, sumY = 0;
+        const points = [];
+
+        for (let i = 0; i < numSamples; i++) {
+            const pt = path.getPointAtLength((i / numSamples) * length);
+            points.push(pt);
+            sumX += pt.x;
+            sumY += pt.y;
+        }
+
+        // 2. Calculate the centroid (center of the circle)
+        const cx = sumX / numSamples;
+        const cy = sumY / numSamples;
+
+        // 3. Calculate average radius
+        let sumR = 0;
+        for (const pt of points) {
+            sumR += Math.hypot(pt.x - cx, pt.y - cy);
+        }
+        const r = Math.max(1, sumR / numSamples);
+
+        // 4. Generate perfect SVG circle path
+        const newD = `M ${cx.toFixed(1)} ${(cy - r).toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${cx.toFixed(1)} ${(cy + r).toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${cx.toFixed(1)} ${(cy - r).toFixed(1)}`;
+        
+        // 5. Apply the new shape to both the visible stroke and the invisible hit-box
+        path.setAttribute('d', newD);
+        if (path._hitPath) {
+            path._hitPath.setAttribute('d', newD);
+        } else {
+            // Fallback in case the hitpath isn't directly attached yet
+            const hitPath = path.parentNode.querySelector('.stroke-hit');
+            if (hitPath) hitPath.setAttribute('d', newD);
+        }
+        
+        changed = true;
+      }
+    });
+    
+    if (changed) {
+        // Save to undo stack
+        pushHistory(); 
+        
+        // Give a quick visual flash to the button to confirm it worked
+        const originalBg = quickCircleBtn.style.background;
+        quickCircleBtn.style.background = '#dbeafe';
+        setTimeout(() => quickCircleBtn.style.background = originalBg, 150);
+    }
+  });
+}
 
 // --- Text Popup Wiring ---
 const textPopup = el('#text-popup');
