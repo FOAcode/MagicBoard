@@ -1357,7 +1357,8 @@ function createSnapshot() {
         transform: g.getAttribute('transform') || '',
         // FIX: Keep track of positions in history
         left: left,
-        top: top
+        top: top,
+        straightLine: p?.dataset?.straightLine === 'true'
       });
     });
   });
@@ -1483,6 +1484,7 @@ function restoreSnapshot(snapshot) {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.classList.add('stroke');
       path.dataset.id = it.id;
+      if (it.straightLine) path.dataset.straightLine = 'true';
       path.setAttribute('d', it.d || '');
       path.setAttribute('stroke', it.stroke || '#000');
       path.setAttribute('stroke-width', it.width || 2);
@@ -2911,6 +2913,8 @@ function onBoardPointerDown(e) {
         board.setPointerCapture?.(e.pointerId);
         finalizeStrokeGroup();
         currentPath = startStroke(x, y);
+
+        currentPath.dataset.straightLine = 'true';
         
         // MODIFIED: M x y L x y creates a visible "dot" immediately
         const d = `M ${x} ${y} L ${x} ${y}`;
@@ -3600,8 +3604,13 @@ async function exportWhiteboard(){
     g.querySelectorAll('.stroke').forEach(p => {
       const d = p.getAttribute('d') || '';
       
-      // Store path data as-is
-      paths.push({ d: d, markerStart: p.getAttribute('marker-start'), markerEnd: p.getAttribute('marker-end') });
+      // Store path data as-is AND preserve the straightLine tag
+      paths.push({ 
+        d: d, 
+        markerStart: p.getAttribute('marker-start'), 
+        markerEnd: p.getAttribute('marker-end'),
+        straightLine: p.dataset.straightLine === 'true' // <-- INTEGRATED HERE
+      });
       g_color = p.getAttribute('stroke') || g_color;
       g_width = p.getAttribute('stroke-width') || g_width;
       if (p.dataset.arrowSize) arrowSize = p.dataset.arrowSize;
@@ -3774,6 +3783,9 @@ async function importWhiteboard(file) {
           
           if (p.markerStart) path.setAttribute('marker-start', p.markerStart);
           if (p.markerEnd) path.setAttribute('marker-end', p.markerEnd);
+          
+          // Restore the straightLine tag onto the dataset
+          if (p.straightLine) path.dataset.straightLine = 'true'; // <-- INTEGRATED HERE
 
           const anyMarker = it.markers && it.markers.length > 0;
           if (anyMarker) {
@@ -4684,7 +4696,12 @@ function applyCircleTransformToSelected() {
         const node = findNodeById(id);
         if (node) {
             const paths = node.querySelectorAll('path.stroke');
-            paths.forEach(p => transformToCircle(p));
+            paths.forEach(p => {
+                // Ignore paths drawn with SHIFT
+                if (p.dataset.straightLine !== 'true') {
+                    transformToCircle(p);
+                }
+            });
         }
     });
     pushHistory();
@@ -4705,11 +4722,16 @@ finalizeStrokeGroup = function() {
     // 3. Transform ONLY the stroke that was just finished, 
     // and only if the mode is active.
     if (autoCircleMode && targetStroke) {
-        const paths = targetStroke.querySelectorAll('path.stroke');
-        paths.forEach(p => transformToCircle(p));
+      const paths = targetStroke.querySelectorAll('path.stroke');
+      paths.forEach(p => {
+          // Ignore paths drawn with SHIFT
+          if (p.dataset.straightLine !== 'true') {
+              transformToCircle(p);
+          }
+      });
         
-        // Push to history after transformation so 'Undo' works correctly
-        pushHistory(); 
+      // Push to history after transformation so 'Undo' works correctly
+      pushHistory(); 
     }
 
     // Optional: Clear selection to prevent the "red" highlight 
