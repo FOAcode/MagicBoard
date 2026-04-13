@@ -1381,6 +1381,15 @@ function restoreSnapshot(snapshot) {
   if (!snapshot) return;
   isRestoringHistory = true;
 
+  // --- BUGFIX: Clear active drawing/selection states so the next user action doesn't reuse detached DOM elements ---
+  if (typeof finalizeStrokeGroup === 'function') finalizeStrokeGroup(); 
+  drawing = false;
+  isLassoing = false;
+  isSelectingRect = false;
+  if (typeof lassoPath !== 'undefined' && lassoPath) { lassoPath.remove(); lassoPath = null; }
+  if (typeof rectSelectPath !== 'undefined' && rectSelectPath) { rectSelectPath.remove(); rectSelectPath = null; }
+  // -------------------------------------------------------------------------------------------------------
+
   // Clear existing items (including previously imported ones)
   const existingItems = board.querySelectorAll('.item, .stroke-wrapper');
   existingItems.forEach(n => {
@@ -1513,6 +1522,7 @@ function updateUndoRedoButtons(){
   if(redoBtn) redoBtn.disabled = redoStack.length === 0;
 }
 
+
 // Quick check to see if two snapshots are effectively the same in terms of items, to avoid pushing redundant history states
 function snapshotItemsEqual(items1, items2) {
   if (!items1 || !items2 || items1.length !== items2.length) return false;
@@ -1528,6 +1538,12 @@ function snapshotItemsEqual(items1, items2) {
     if (a.width !== b.width || a.height !== b.height) return false;
     if (a.d !== b.d || a.stroke !== b.stroke) return false;
     if (a.text !== b.text || a.transform !== b.transform) return false;
+    
+    // Ensure arrow states and straight-line metadata are tracked
+    if (!!a.hasStartArrow !== !!b.hasStartArrow) return false;
+    if (!!a.hasEndArrow !== !!b.hasEndArrow) return false;
+    if (a.arrowSize !== b.arrowSize) return false;
+    if (!!a.straightLine !== !!b.straightLine) return false;
   }
   return true;
 }
