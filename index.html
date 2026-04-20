@@ -1454,9 +1454,9 @@ function restoreSnapshot(snapshot) {
       svgWrapper.dataset.id = it.id;
       svgWrapper.style.zIndex = it.z || 0;
 
-      // FIX: Restore the physical position
-      if (it.left) svgWrapper.style.left = it.left + 'px';
-      if (it.top) svgWrapper.style.top = it.top + 'px';
+      // FIX: Restore the physical position (ensure it's set even when 0 to avoid CSS fallback issues)
+      svgWrapper.style.left = (it.left ?? 0) + 'px';
+      svgWrapper.style.top = (it.top ?? 0) + 'px';
 
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       if (it.transform) g.setAttribute('transform', it.transform);
@@ -3752,8 +3752,8 @@ async function importWhiteboard(file) {
         svgWrapper.dataset.id = it.id;
         svgWrapper.dataset.type = 'stroke-group';
         svgWrapper.style.zIndex = it.z;
-        if (it.left) svgWrapper.style.left = it.left + 'px';
-        if (it.top) svgWrapper.style.top = it.top + 'px';
+        svgWrapper.style.left = (it.left ?? 0) + 'px';
+        svgWrapper.style.top = (it.top ?? 0) + 'px';
         board.appendChild(svgWrapper);
 
         const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
