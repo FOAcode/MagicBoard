@@ -1060,8 +1060,8 @@
     </div>
     <div class="popup-row">
       <label for="text-bg-alpha">BG Opacity</label>
-      <input type="range" id="text-bg-alpha" min="0" max="1" step="0.05">
-      <span id="text-bg-alpha-label">0.0</span>
+      <input type="range" id="text-bg-alpha" min="0" max="100" step="1">
+      <span id="text-bg-alpha-label">0%</span>
     </div>
   </div>
 
@@ -1726,10 +1726,20 @@ function setTool(t){
                       clone.classList.remove('toolbar-condensed', 'toolbar-super-condensed');
                       for (const id in mainToolsFull) { clone.querySelector(id).innerText = mainToolsFull[id]; }
 
+                      // Ensure quick colors and toolbars are properly visible for accurate space calculation
                       const quickColorsClone = clone.querySelector('#quick-stroke-colors');
                       const strokeToolbarClone = clone.querySelector('#stroke-toolbar');
-                      if (quickColorsClone && strokeToolbarClone && strokeToolbarClone.style.display !== 'none') {
-                          quickColorsClone.style.display = 'flex';
+                      const textToolbarClone = clone.querySelector('#text-toolbar');
+                      
+                      // Show stroke toolbar & colors if they're visible in the real toolbar
+                      if (strokeToolbarClone && el('#stroke-toolbar').style.display !== 'none') {
+                          strokeToolbarClone.style.display = 'flex';
+                          if (quickColorsClone) quickColorsClone.style.display = 'flex';
+                      }
+                      
+                      // Show text toolbar if visible in the real toolbar
+                      if (textToolbarClone && el('#text-toolbar').style.display !== 'none') {
+                          textToolbarClone.style.display = 'flex';
                       }
 
                       // Check overflow on the clone in stages
@@ -1738,14 +1748,16 @@ function setTool(t){
                           clone.classList.add('toolbar-condensed');
                       }
 
+                      // At level 2, hide quick colors if still overflowing
                       if (clone.scrollWidth > clone.clientWidth + 1) {
                           condensationLevel = 2;
                           if (quickColorsClone) quickColorsClone.style.display = 'none';
                       }
+                      
+                      // At level 3, full super-condensed mode
                       if (clone.scrollWidth > clone.clientWidth + 1) {
                           condensationLevel = 3;
                           clone.classList.add('toolbar-super-condensed');
-
                           for (const id in mainToolsShort) { clone.querySelector(id).innerText = mainToolsShort[id]; }
                       }
 
@@ -1759,6 +1771,7 @@ function setTool(t){
                           for (const id in mainToolsFull) { el(id).innerText = mainToolsFull[id]; }
                       }
 
+                      // Apply color picker visibility based on space availability and stroke toolbar state
                       const quickColors = el('#quick-stroke-colors');
                       const strokeToolbar = el('#stroke-toolbar');
 
@@ -4775,6 +4788,8 @@ textSettingsBtn.addEventListener('click', (e) => {
   textPopup.style.display = (textPopup.style.display === 'block') ? 'none' : 'block';
   el('#stroke-popup').style.display = 'none';
   el('#selection-mode-menu').style.display = 'none';
+  // Sync popup UI with current state when opening
+  if (textPopup.style.display === 'block') updateTextPopupUI();
 });
 
 
@@ -4803,8 +4818,10 @@ function updateTextPopupUI() {
   
   if (textColorInput.value !== state.text.color) textColorInput.value = state.text.color;
   if (textBgColorInput.value !== state.text.bgColor) textBgColorInput.value = state.text.bgColor;
-  if (textBgAlphaInput.value !== state.text.bgAlpha) textBgAlphaInput.value = state.text.bgAlpha;
-  const alphaLabel = parseFloat(state.text.bgAlpha).toFixed(2);
+  // Convert 0-1 state to 0-100 slider range
+  const bgAlphaPercent = Math.round(state.text.bgAlpha * 100);
+  if (textBgAlphaInput.value !== bgAlphaPercent) textBgAlphaInput.value = bgAlphaPercent;
+  const alphaLabel = bgAlphaPercent + '%';
   if (textBgAlphaLabel.innerText !== alphaLabel) textBgAlphaLabel.innerText = alphaLabel;
   
   // Sync font family dropdown - ensure value matches an option
@@ -4914,8 +4931,9 @@ if (textFontFamilySelect) {
 if(textBgAlphaInput){
   textBgAlphaInput.addEventListener('pointerdown', ()=>{ startSliderHistory(); });
   textBgAlphaInput.addEventListener('input', (e) => {
-    state.text.bgAlpha = parseFloat(e.target.value);
-    textBgAlphaLabel.innerText = state.text.bgAlpha.toFixed(2);
+    const sliderVal = parseFloat(e.target.value);
+    state.text.bgAlpha = sliderVal / 100; // Convert 0-100 to 0-1 for state
+    textBgAlphaLabel.innerText = Math.round(sliderVal) + '%';
     applyTextSettingsToSelection();
   });
   textBgAlphaInput.addEventListener('change', ()=>{ endSliderHistory(); });
