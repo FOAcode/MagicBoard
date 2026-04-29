@@ -5164,6 +5164,60 @@ if (importBtn) importBtn.addEventListener('click', () => {
   inp.click();
 });
 
+// --- Copy selected items to clipboard ---
+async function copySelected() {
+  if (state.selectedIds.size === 0) return;
+
+  const selectedItems = Array.from(state.selectedIds)
+    .map(id => findNodeById(id))
+    .filter(node => node);
+
+  if (selectedItems.length === 0) return;
+
+  try {
+    // Handle single image
+    if (selectedItems.length === 1 && selectedItems[0].dataset.type === 'image') {
+      const imgElement = selectedItems[0].querySelector('img');
+      if (imgElement && imgElement.src) {
+        const response = await fetch(imgElement.src);
+        const blob = await response.blob();
+        const item = new ClipboardItem({ 'image/png': blob });
+        await navigator.clipboard.write([item]);
+        showCopyFeedback();
+        return;
+      }
+    }
+
+    // Handle multiple items or text - copy as text
+    const textParts = [];
+    selectedItems.forEach(node => {
+      if (node.dataset.type === 'text') {
+        const textEl = node.querySelector('.text-item');
+        if (textEl) textParts.push(textEl.innerText);
+      } else if (node.dataset.type === 'image') {
+        const imgEl = node.querySelector('img');
+        if (imgEl && imgEl.src) textParts.push(imgEl.src);
+      }
+    });
+
+    if (textParts.length > 0) {
+      await navigator.clipboard.writeText(textParts.join('\n'));
+      showCopyFeedback();
+    }
+  } catch (err) {
+    console.error('Copy failed:', err);
+  }
+}
+
+function showCopyFeedback() {
+  const feedback = document.querySelector('#copy-feedback');
+  if (feedback) {
+    feedback.classList.remove('show');
+    void feedback.offsetHeight; // Trigger reflow
+    feedback.classList.add('show');
+  }
+}
+
 // --- Keyboard Shortcuts ---
 window.addEventListener('keydown', (e)=>{
   const isInputFocused = !!document.activeElement && (document.activeElement.isContentEditable || ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName));
@@ -5205,6 +5259,10 @@ window.addEventListener('keydown', (e)=>{
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y'){
     e.preventDefault(); redo();
+  }
+  // Copy selected items to clipboard
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c'){
+    e.preventDefault(); copySelected();
   }
 });
 
