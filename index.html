@@ -796,6 +796,20 @@
         <label style="font-size:13px;font-weight:500;color:#374151;">Opacity:</label>
         <input type="range" id="transparency-slider" min="0" max="100" value="100" style="width:200px">
         <span id="transparency-value" style="font-size:13px;min-width:40px;color:#6b7280;">100%</span>
+        <button class="tool-btn icon-only" id="flip-horizontal-btn" title="Flip Horizontal" style="padding: 6px; margin-left: 4px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="4" x2="12" y2="20"/>
+            <path d="M4 12l4-3v6z"/>
+            <path d="M20 12l-4-3v6z"/>
+          </svg>
+        </button>
+        <button class="tool-btn icon-only" id="flip-vertical-btn" title="Flip Vertical" style="padding: 6px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <path d="M12 4l3 4h-6z"/>
+            <path d="M12 20l3-4h-6z"/>
+          </svg>
+        </button>
       </div>
       
       <div id="stroke-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
@@ -1306,6 +1320,7 @@ function createSnapshot() {
       const h = parseFloat(height);
       obj.src = img?.src || '';
       obj.opacity = parseFloat(img?.style.opacity || '1');
+      obj.transform = img?.style.transform || '';
       obj.width = Math.max(20, isNaN(w) ? 240 : w);
       obj.height = Math.max(20, isNaN(h) ? 180 : h);
     } else if (n.dataset.type === 'text') {
@@ -1411,6 +1426,11 @@ function restoreSnapshot(snapshot) {
       item.style.width = imgWidth + 'px';
       if (it.height && it.height > 0) {
         item.style.height = Math.max(20, it.height) + 'px';
+      }
+      
+      const img = item.querySelector('img');
+      if (img && it.transform) {
+        img.style.transform = it.transform;
       }
     }
 
@@ -3590,8 +3610,9 @@ async function exportWhiteboard(){
           imageBlobs.push(blob);
           obj.imageIndex = idx;
           obj.originalSrc = img.src;
-          // Save opacity information
+          // Save opacity and transform information
           obj.opacity = parseFloat(img.style.opacity || '1');
+          obj.transform = img.style.transform || '';
         } catch (err) {
           console.warn('Could not include image in export:', err);
         }
@@ -3737,6 +3758,10 @@ async function importWhiteboard(file) {
         });
         item.style.zIndex = it.z;
         if (it.height) item.style.height = it.height + 'px';
+        const img = item.querySelector('img');
+        if (img && it.transform) {
+          img.style.transform = it.transform;
+        }
 
       } else if (it.type === 'text') {
         const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
@@ -4939,6 +4964,54 @@ if(textBgAlphaInput){
   textBgAlphaInput.addEventListener('change', ()=>{ endSliderHistory(); });
 }
 updateTextPopupUI();
+
+// --- Image Flip Functions ---
+function flipImageHorizontally() {
+  state.selectedIds.forEach(id => {
+    const node = findNodeById(id);
+    if (node && node.dataset.type === 'image') {
+      const img = node.querySelector('img');
+      if (img) {
+        const currentTransform = img.style.transform || '';
+        const scaleMatch = currentTransform.match(/scaleX\(([^)]+)\)/);
+        const currentScaleX = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+        const newScaleX = currentScaleX === 1 ? -1 : 1;
+        const newTransform = currentTransform.replace(/scaleX\([^)]+\)/, '').trim() + ` scaleX(${newScaleX})`;
+        img.style.transform = newTransform.trim();
+      }
+    }
+  });
+  pushHistory();
+}
+
+function flipImageVertically() {
+  state.selectedIds.forEach(id => {
+    const node = findNodeById(id);
+    if (node && node.dataset.type === 'image') {
+      const img = node.querySelector('img');
+      if (img) {
+        const currentTransform = img.style.transform || '';
+        const scaleMatch = currentTransform.match(/scaleY\(([^)]+)\)/);
+        const currentScaleY = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+        const newScaleY = currentScaleY === 1 ? -1 : 1;
+        const newTransform = currentTransform.replace(/scaleY\([^)]+\)/, '').trim() + ` scaleY(${newScaleY})`;
+        img.style.transform = newTransform.trim();
+      }
+    }
+  });
+  pushHistory();
+}
+
+// --- Flip Button Event Listeners ---
+const flipHorizontalBtn = el('#flip-horizontal-btn');
+if (flipHorizontalBtn) {
+  flipHorizontalBtn.addEventListener('click', flipImageHorizontally);
+}
+
+const flipVerticalBtn = el('#flip-vertical-btn');
+if (flipVerticalBtn) {
+  flipVerticalBtn.addEventListener('click', flipImageVertically);
+}
 
 // --- Transparency Slider Wiring ---
 const transparencySliderEl = el('#transparency-slider');
