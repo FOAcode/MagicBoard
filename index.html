@@ -3421,10 +3421,30 @@ window.addEventListener('paste', (ev)=>{
     }
     if(it.type === 'text/plain'){
       it.getAsString(str=>{
-        const rect = board.getBoundingClientRect();
-        const centerX = (rect.width / 2) / state.scale;
-        const centerY = (rect.height / 2) / state.scale;
-        createTextItem(str, centerX - 80, centerY - 20);
+        let x, y;
+        const boardRect = board.getBoundingClientRect();
+
+        if (lastMouseEvent) {
+          let mouseX = lastMouseEvent.clientX;
+          let mouseY = lastMouseEvent.clientY;
+
+          // Clamp mouse position to be inside canvas bounds
+          const clampedX = Math.max(boardRect.left, Math.min(mouseX, boardRect.right));
+          const clampedY = Math.max(boardRect.top, Math.min(mouseY, boardRect.bottom));
+
+          // Convert to board coordinates
+          x = (clampedX - boardRect.left) / state.scale;
+          y = (clampedY - boardRect.top) / state.scale;
+
+        } else {
+          // Fallback to center if no mouse event has been recorded
+          const centerX = (boardRect.width / 2) / state.scale;
+          const centerY = (boardRect.height / 2) / state.scale;
+          x = centerX - 80;
+          y = centerY - 20;
+        }
+
+        createTextItem(str, x, y, { skipFocus: true });
       });
       ev.preventDefault();
       return;
@@ -5248,43 +5268,88 @@ async function copySelected() {
   if (selectedItems.length === 0) return;
 
   try {
-    // Handle single image
+    // Handle single image - copy as PNG blob
     if (selectedItems.length === 1 && selectedItems[0].dataset.type === 'image') {
       const imgElement = selectedItems[0].querySelector('img');
       if (imgElement && imgElement.src) {
-        const response = await fetch(imgElement.src);
-        const blob = await response.blob();
-        const item = new ClipboardItem({ 'image/png': blob });
-        await navigator.clipboard.write([item]);
-        showCopyFeedback();
-        return;
+        const blob = await imageToBlob(imgElement);
+        if (blob) {
+          const item = new ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          showCopyFeedback('Image copied to clipboard');
+          return;
+        }
       }
     }
 
-    // Handle multiple items or text - copy as text
+    // Handle text items - copy text content only
     const textParts = [];
     selectedItems.forEach(node => {
       if (node.dataset.type === 'text') {
         const textEl = node.querySelector('.text-item');
         if (textEl) textParts.push(textEl.innerText);
-      } else if (node.dataset.type === 'image') {
-        const imgEl = node.querySelector('img');
-        if (imgEl && imgEl.src) textParts.push(imgEl.src);
       }
     });
 
     if (textParts.length > 0) {
       await navigator.clipboard.writeText(textParts.join('\n'));
-      showCopyFeedback();
+      showCopyFeedback(textParts.length > 1 ? 'Text items copied to clipboard' : 'Text copied to clipboard');
+      return;
+    }
+
+    // Handle multiple items with images - try to copy the first image as PNG
+    if (selectedItems.length > 1) {
+      const firstImage = selectedItems.find(n => n.dataset.type === 'image');
+      if (firstImage) {
+        const imgElement = firstImage.querySelector('img');
+        if (imgElement && imgElement.src) {
+          const blob = await imageToBlob(imgElement);
+          if (blob) {
+            const item = new ClipboardItem({ 'image/png': blob });
+            await navigator.clipboard.write([item]);
+            showCopyFeedback('Image copied to clipboard');
+            return;
+          }
+        }
+      }
     }
   } catch (err) {
     console.error('Copy failed:', err);
+    showCopyFeedback('Copy failed');
   }
 }
 
-function showCopyFeedback() {
+// Helper function to convert an img element to a PNG blob
+async function imageToBlob(imgElement) {
+  return new Promise((resolve) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = imgElement.naturalWidth || imgElement.width || 240;
+      canvas.height = imgElement.naturalHeight || imgElement.height || 180;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      
+      ctx.drawImage(imgElement, 0, 0);
+      
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
+    } catch (err) {
+      console.error('Error converting image to blob:', err);
+      resolve(null);
+    }
+  });
+}
+
+function showCopyFeedback(message = 'Copied!') {
   const feedback = document.querySelector('#copy-feedback');
   if (feedback) {
+    // Update the message content
+    feedback.textContent = message;
     feedback.classList.remove('show');
     void feedback.offsetHeight; // Trigger reflow
     feedback.classList.add('show');
@@ -5317,6 +5382,16 @@ window.addEventListener('keydown', (e)=>{
     return;
   }
 
+  // Handle Ctrl+C even when text is focused (to copy imported content)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c'){
+    // Only proceed if something is selected (not just editing text)
+    if (state.selectedIds.size > 0) {
+      e.preventDefault(); 
+      copySelected();
+      return;
+    }
+  }
+
   if (isInputFocused) return;
   if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
   if(e.key === 's') { document.activeElement?.blur(); setTool('select'); }
@@ -5332,10 +5407,6 @@ window.addEventListener('keydown', (e)=>{
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y'){
     e.preventDefault(); redo();
-  }
-  // Copy selected items to clipboard
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c'){
-    e.preventDefault(); copySelected();
   }
 });
 
