@@ -529,10 +529,10 @@
   
   .toggle-knob {
     position: relative;
-    width: 44px;
-    height: 24px;
+    width: 36px;
+    height: 20px;
     background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
-    border-radius: 12px;
+    border-radius: 10px;
     transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
     border: 1.5px solid #d1d5db;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.08);
@@ -541,11 +541,11 @@
   .toggle-knob::after {
     content: '';
     position: absolute;
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
     border-radius: 50%;
-    top: 1px;
+    top: 2px;
     left: 2px;
     transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
@@ -558,7 +558,7 @@
   }
   
   .toggle-switch input[type="checkbox"]:checked + .toggle-knob::after {
-    left: 22px;
+    left: 18px;
     box-shadow: 0 2px 8px rgba(43, 108, 176, 0.3), 0 1px 2px rgba(0, 0, 0, 0.1);
   }
   
@@ -798,9 +798,9 @@
 
   /* Styling for the active toggle state */
   #quick-circle-transform.active {
-      background: #dbeafe !important; /* Light blue background */
-      border-color: #93c5fd !important;
-      color: #1e40af !important;
+      background: #ADD8E6 !important;
+      border-color: #7ECCE8 !important;
+      color: #1f2937 !important;
       box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
   }
 </style>
@@ -5051,27 +5051,28 @@ if (circleTransformInput) {
 }
 
 // Global toggle state
-let autoCircleMode = state.stroke.circleTransform || false;
+// Function to synchronize the UI elements with the state
+function syncCircleTransformUI() {
+  const quickCircleBtn = el('#quick-circle-transform');
+  const circleTransformInput = el('#circle-transform');
 
-const quickCircleBtn = document.getElementById('quick-circle-transform');
+  if (quickCircleBtn) {
+    quickCircleBtn.classList.toggle('active', state.stroke.circleTransform);
+  }
+  if (circleTransformInput) {
+    circleTransformInput.checked = state.stroke.circleTransform;
+  }
+}
 
-if (quickCircleBtn) {
-    quickCircleBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        autoCircleMode = !autoCircleMode;
-        state.stroke.circleTransform = autoCircleMode;
-        quickCircleBtn.classList.toggle('active', autoCircleMode);
-        if (circleTransformInput) circleTransformInput.checked = autoCircleMode;
-
-        // If mode is turned ON and something is selected, transform it immediately
-        if (autoCircleMode && state.selectedIds.size > 0) {
-            applyCircleTransformToSelected();
-            // We clear selection after manual transform so it's ready for new drawing
-            clearSelection();
-        }
-    });
+if (circleTransformInput) {
+  circleTransformInput.addEventListener('change', (e) => {
+    state.stroke.circleTransform = e.target.checked;
+    syncCircleTransformUI(); // Sync quick action button
+    if (state.stroke.circleTransform && state.selectedIds.size > 0) {
+      applyCircleTransformToSelected();
+      clearSelection();
+    }
+  });
 }
 
 /**
@@ -5145,7 +5146,7 @@ finalizeStrokeGroup = function() {
 
     // 3. Transform ONLY the stroke that was just finished, 
     // and only if the mode is active.
-    if (autoCircleMode && targetStroke) {
+    if (state.stroke.circleTransform && targetStroke) {
       const paths = targetStroke.querySelectorAll('path.stroke');
       paths.forEach(p => {
           // Ignore paths drawn with SHIFT
@@ -5161,6 +5162,23 @@ finalizeStrokeGroup = function() {
     // Optional: Clear selection to prevent the "red" highlight 
     // from interfering with the next drawing
     clearSelection();
+};
+
+const quickCircleBtn = document.getElementById('quick-circle-transform');
+
+if (quickCircleBtn) {
+    quickCircleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        state.stroke.circleTransform = !state.stroke.circleTransform;
+        syncCircleTransformUI(); // Sync popup toggle
+
+        if (state.stroke.circleTransform && state.selectedIds.size > 0) {
+            applyCircleTransformToSelected();
+            clearSelection();
+        }
+    });
 };
 
 // --- Text Popup Wiring ---
@@ -5782,6 +5800,7 @@ function debounce(func, wait) {
 // Use debounce for scroll and zoom events to prevent excessive updates
 setTool('select');
 updateSelectionModeUI();
+syncCircleTransformUI(); // Initial sync for circle transform buttons
 applyScale();
 refreshLayers();
 // Capture initial state for undo/redo
