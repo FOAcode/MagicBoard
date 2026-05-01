@@ -3108,6 +3108,9 @@ function isPointInPolygon(point, polygon) {
 function onBoardPointerDown(e) {
   if (e.button !== 0) return;
   
+  // Block immediately if multi-touch (pinch zoom attempt)
+  if (e.touches && e.touches.length >= 2) return;
+  
   // Prevent any action if pinch zoom is in progress
   if (pinchState) return;
   
@@ -3259,6 +3262,9 @@ function onBoardPointerDown(e) {
 
 // --- DRAWING POINTER MOVE HANDLER --- 
 function onBoardPointerMove(e) {
+  // Block immediately if multi-touch (pinch zoom attempt)
+  if (e.touches && e.touches.length >= 2) return;
+  
   // Prevent drawing/selection during pinch zoom
   if (pinchState) return;
   
@@ -3398,6 +3404,9 @@ function onBoardPointerMove(e) {
   onPointerMove(e);
 }
 function onBoardPointerUp(e){
+  // Block if multi-touch (pinch zoom)
+  if (e.touches && e.touches.length >= 1) return;
+  
   const pt = getBoardPointFromEvent(e);
   const x = pt.x, y = pt.y;
   let didDrawOrLasso = false;
@@ -4089,6 +4098,12 @@ async function importWhiteboard(file) {
 
 /* Event wiring */
 board.addEventListener('pointerdown', (e) => {
+  // Block immediately if this is a touch event with 2+ fingers (potential pinch)
+  if (e.pointerType === 'touch' && e.touches && e.touches.length >= 2) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   // Prevent pointer events during pinch zoom
   if (pinchState && pinchState.isActive) {
     e.preventDefault();
@@ -4099,6 +4114,12 @@ board.addEventListener('pointerdown', (e) => {
 }, {capture: true});
 
 board.addEventListener('pointermove', (e) => {
+  // Block immediately if this is a touch event with 2+ fingers (potential pinch)
+  if (e.pointerType === 'touch' && e.touches && e.touches.length >= 2) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   // Prevent pointer events during pinch zoom
   if (pinchState && pinchState.isActive) {
     e.preventDefault();
