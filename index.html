@@ -515,6 +515,63 @@
   }
   .popup-row span { font-size: 13px; min-width: 24px; text-align: right; color: #6b7280; }
   
+  /* Toggle Switch Styling - Modern */
+  .toggle-switch {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  
+  .toggle-switch input[type="checkbox"] {
+    display: none;
+  }
+  
+  .toggle-knob {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
+    border-radius: 12px;
+    transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1.5px solid #d1d5db;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.08);
+  }
+  
+  .toggle-knob::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
+    border-radius: 50%;
+    top: 1px;
+    left: 2px;
+    transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+  
+  .toggle-switch input[type="checkbox"]:checked + .toggle-knob {
+    background: linear-gradient(180deg, #3b82f6 0%, #2b6cb0 100%);
+    border-color: #2563eb;
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1), 0 4px 8px rgba(43, 108, 176, 0.25);
+  }
+  
+  .toggle-switch input[type="checkbox"]:checked + .toggle-knob::after {
+    left: 22px;
+    box-shadow: 0 2px 8px rgba(43, 108, 176, 0.3), 0 1px 2px rgba(0, 0, 0, 0.1);
+  }
+  
+  .toggle-switch input[type="checkbox"]:focus-visible + .toggle-knob {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+  
+  .toggle-switch input[type="checkbox"]:disabled + .toggle-knob {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
   .popup-row-buttons {
     display: flex;
     gap: 6px;
@@ -1019,18 +1076,34 @@
     </div>
     <div class="popup-row" style="margin-top: 8px;">
       <label for="rounded-lines" style="font-size: 13px;">Rounded Corners</label>
-      <input type="checkbox" id="rounded-lines">
+      <label class="toggle-switch">
+        <input type="checkbox" id="rounded-lines">
+        <div class="toggle-knob"></div>
+      </label>
+    </div>
+    <div class="popup-row" style="margin-top: 8px;">
+      <label for="circle-transform" style="font-size: 13px;">Transform to Circle</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="circle-transform">
+        <div class="toggle-knob"></div>
+      </label>
     </div>
     <div class="popup-row" style="margin-top: 8px;">
       <label><b>Arrow Options</b></label>
     </div>
     <div class="popup-row" style="margin-left: 8px;">
       <label for="start-arrow" style="font-size: 13px;">Start</label>
-      <input type="checkbox" id="start-arrow">
+      <label class="toggle-switch">
+        <input type="checkbox" id="start-arrow">
+        <div class="toggle-knob"></div>
+      </label>
     </div>
     <div class="popup-row" style="margin-left: 8px;">
       <label for="end-arrow" style="font-size: 13px;">End</label>
-      <input type="checkbox" id="end-arrow">
+      <label class="toggle-switch">
+        <input type="checkbox" id="end-arrow">
+        <div class="toggle-knob"></div>
+      </label>
     </div>
     <div class="popup-row">
       <label for="arrow-size">Arrow Size</label>
@@ -1233,7 +1306,8 @@ let state = {
     startArrow: false,
     endArrow: false,
     arrowSize: 10,
-    rounded: false
+    rounded: false,
+    circleTransform: false
   },
   text: {
     bold: false,
@@ -1340,11 +1414,8 @@ function finalizeStrokeGroup() {
     }
 
     if (currentStrokeGroup) {
-        // Only transform if the circle button is explicitly active
-        const circleToggle = document.getElementById('quick-circle-transform');
-        const isCircleMode = circleToggle && circleToggle.classList.contains('active');
-
-        if (isCircleMode) {
+        // Only transform if circle transform is enabled in state
+        if (state.stroke.circleTransform) {
             // Keep your existing transformation logic here
             // transformToCircle(currentStrokeGroup); 
         }
@@ -4017,9 +4088,31 @@ async function importWhiteboard(file) {
 }
 
 /* Event wiring */
-board.addEventListener('pointerdown', onBoardPointerDown, {capture: true});
-board.addEventListener('pointermove', onBoardPointerMove);
-board.addEventListener('pointerup', onBoardPointerUp);
+board.addEventListener('pointerdown', (e) => {
+  // Prevent pointer events during pinch zoom
+  if (pinchState && pinchState.isActive) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  onBoardPointerDown(e);
+}, {capture: true});
+
+board.addEventListener('pointermove', (e) => {
+  // Prevent pointer events during pinch zoom
+  if (pinchState && pinchState.isActive) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  onBoardPointerMove(e);
+});
+
+board.addEventListener('pointerup', (e) => {
+  // Allow pointer up even during pinch
+  if (pinchState && pinchState.isActive) return;
+  onBoardPointerUp(e);
+});
 
 board.addEventListener('pointermove', (e) => {
     if (state.tool === 'draw' && e.shiftKey) {
@@ -4402,7 +4495,20 @@ let pinchState = null;
 
 boardWrap.addEventListener('touchstart', (e) => {
   if (e.touches.length === 2) {
+    // Prevent any interference from other handlers during pinch
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Clear any active drawing/selection state
+    if (drawing) {
+      drawing = false;
+      finalizeStrokeGroup();
+    }
+    if (isLassoing || isSelectingRect) {
+      isLassoing = false;
+      isSelectingRect = false;
+      clearSelection();
+    }
     
     // Calculate initial distance between two touch points
     const touch1 = e.touches[0];
@@ -4417,14 +4523,17 @@ boardWrap.addEventListener('touchstart', (e) => {
       currentScale: state.scale,
       centerX: (touch1.clientX + touch2.clientX) / 2,
       centerY: (touch1.clientY + touch2.clientY) / 2,
-      lastDistance: lastTouchDistance
+      lastDistance: lastTouchDistance,
+      isActive: true
     };
   }
 }, { passive: false });
 
 boardWrap.addEventListener('touchmove', (e) => {
-  if (e.touches.length === 2 && pinchState) {
+  if (e.touches.length === 2 && pinchState && pinchState.isActive) {
+    // Prevent any interference from other handlers during pinch
     e.preventDefault();
+    e.stopPropagation();
     
     // Calculate current distance between two touch points
     const touch1 = e.touches[0];
@@ -4472,9 +4581,20 @@ boardWrap.addEventListener('touchmove', (e) => {
 
 boardWrap.addEventListener('touchend', (e) => {
   if (e.touches.length < 2) {
+    // Properly cleanup pinch state
+    if (pinchState) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     lastTouchDistance = 0;
     pinchState = null;
   }
+}, { passive: false });
+
+boardWrap.addEventListener('touchcancel', (e) => {
+  // Cancel pinch if touch is interrupted
+  lastTouchDistance = 0;
+  pinchState = null;
 }, { passive: false });
 
 boardWrap.addEventListener('pointerenter', (e) => {
@@ -4648,6 +4768,13 @@ function updateToolbarStrokeUI(){
   if(quickRoundedBtn) {
     if (quickRoundedBtn.classList.contains('active') !== state.stroke.rounded) {
       quickRoundedBtn.classList.toggle('active', state.stroke.rounded);
+    }
+  }
+  // Sync circle transform button
+  const quickCircleBtnSync = el('#quick-circle-transform');
+  if(quickCircleBtnSync) {
+    if (quickCircleBtnSync.classList.contains('active') !== state.stroke.circleTransform) {
+      quickCircleBtnSync.classList.toggle('active', state.stroke.circleTransform);
     }
   }
 }
@@ -4891,8 +5018,19 @@ if (quickRoundedBtn) {
   });
 }
 
+// Circle transform control
+const circleTransformInput = el('#circle-transform');
+if (circleTransformInput) {
+  circleTransformInput.addEventListener('change', (e) => {
+    state.stroke.circleTransform = e.target.checked;
+    const quickCircleBtn = el('#quick-circle-transform');
+    if (quickCircleBtn) quickCircleBtn.classList.toggle('active', e.target.checked);
+  });
+  circleTransformInput.checked = state.stroke.circleTransform || false;
+}
+
 // Global toggle state
-let autoCircleMode = false;
+let autoCircleMode = state.stroke.circleTransform || false;
 
 const quickCircleBtn = document.getElementById('quick-circle-transform');
 
@@ -4902,7 +5040,9 @@ if (quickCircleBtn) {
         e.stopPropagation();
 
         autoCircleMode = !autoCircleMode;
+        state.stroke.circleTransform = autoCircleMode;
         quickCircleBtn.classList.toggle('active', autoCircleMode);
+        if (circleTransformInput) circleTransformInput.checked = autoCircleMode;
 
         // If mode is turned ON and something is selected, transform it immediately
         if (autoCircleMode && state.selectedIds.size > 0) {
