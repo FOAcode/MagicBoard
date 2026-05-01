@@ -3036,6 +3036,10 @@ function isPointInPolygon(point, polygon) {
 // --- DRAWING HANDLERS --- Handles pointer down events on the board for drawing and selection. For the draw tool, it supports freehand drawing, straight lines with Shift, and single straight lines with Shift+Alt. For the select tool, it initiates lasso or rectangular selection based on the current selection mode. It also handles text tool interactions, allowing users to create new text boxes or select existing ones. The function ensures that drawing actions do not interfere with selection and vice versa, and it manages the state for straight line drawing, including handling interruptions when switching between straight line and freehand modes. It also prevents selection of underlying elements when interacting with the text tool.
 function onBoardPointerDown(e) {
   if (e.button !== 0) return;
+  
+  // Prevent any action if pinch zoom is in progress
+  if (pinchState) return;
+  
   const pt = getBoardPointFromEvent(e);
   const x = pt.x, y = pt.y;
   state.pointer.x = x; state.pointer.y = y;
@@ -3184,6 +3188,9 @@ function onBoardPointerDown(e) {
 
 // --- DRAWING POINTER MOVE HANDLER --- 
 function onBoardPointerMove(e) {
+  // Prevent drawing/selection during pinch zoom
+  if (pinchState) return;
+  
   if (isLassoing) {
     const pt = getBoardPointFromEvent(e);
     const x = pt.x, y = pt.y;
@@ -4407,8 +4414,10 @@ boardWrap.addEventListener('touchstart', (e) => {
     // Store pinch center point for focal zooming
     pinchState = {
       initialScale: state.scale,
+      currentScale: state.scale,
       centerX: (touch1.clientX + touch2.clientX) / 2,
-      centerY: (touch1.clientY + touch2.clientY) / 2
+      centerY: (touch1.clientY + touch2.clientY) / 2,
+      lastDistance: lastTouchDistance
     };
   }
 }, { passive: false });
@@ -4424,10 +4433,14 @@ boardWrap.addEventListener('touchmove', (e) => {
     const dy = touch2.clientY - touch1.clientY;
     const currentDistance = Math.sqrt(dx * dx + dy * dy);
     
-    if (lastTouchDistance > 0) {
-      // Calculate zoom factor based on distance change
-      const distanceRatio = currentDistance / lastTouchDistance;
-      const oldScale = pinchState.initialScale;
+    // Update pinch center point to current position of the two fingers
+    pinchState.centerX = (touch1.clientX + touch2.clientX) / 2;
+    pinchState.centerY = (touch1.clientY + touch2.clientY) / 2;
+    
+    if (pinchState.lastDistance > 0) {
+      // Calculate zoom factor based on incremental distance change
+      const distanceRatio = currentDistance / pinchState.lastDistance;
+      const oldScale = pinchState.currentScale;
       const rawNewScale = Math.min(4, Math.max(0.2, oldScale * distanceRatio));
       
       // Get board position and calculate focal point in board-space
@@ -4444,6 +4457,10 @@ boardWrap.addEventListener('touchmove', (e) => {
       const scrollAdjY = by * (newScale - oldScale);
       boardWrap.scrollLeft += scrollAdjX;
       boardWrap.scrollTop += scrollAdjY;
+      
+      // Update state for next frame
+      pinchState.currentScale = newScale;
+      pinchState.lastDistance = currentDistance;
       
       // Update cursor and guides position after layout updates
       requestAnimationFrame(() => {
