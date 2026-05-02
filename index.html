@@ -3114,6 +3114,9 @@ function onBoardPointerDown(e) {
   // Prevent any action if pinch zoom is in progress
   if (pinchState) return;
   
+  // Prevent any action during grace period after pinch ends
+  if (isPinchGracePeriod) return;
+  
   const pt = getBoardPointFromEvent(e);
   const x = pt.x, y = pt.y;
   state.pointer.x = x; state.pointer.y = y;
@@ -3267,6 +3270,9 @@ function onBoardPointerMove(e) {
   
   // Prevent drawing/selection during pinch zoom
   if (pinchState) return;
+  
+  // Prevent drawing/selection during grace period after pinch
+  if (isPinchGracePeriod) return;
   
   if (isLassoing) {
     const pt = getBoardPointFromEvent(e);
@@ -4110,6 +4116,12 @@ board.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     return;
   }
+  // Prevent drawing/selection during grace period after pinch
+  if (isPinchGracePeriod) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   onBoardPointerDown(e);
 }, {capture: true});
 
@@ -4122,6 +4134,12 @@ board.addEventListener('pointermove', (e) => {
   }
   // Prevent pointer events during pinch zoom
   if (pinchState && pinchState.isActive) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  // Prevent drawing/selection during grace period after pinch
+  if (isPinchGracePeriod) {
     e.preventDefault();
     e.stopPropagation();
     return;
@@ -4513,8 +4531,17 @@ boardWrap.addEventListener('wheel', (e)=>{
 // Pinch-to-zoom support for touch devices (Android, iOS, tablets, phones)
 let lastTouchDistance = 0;
 let pinchState = null;
+let pinchGracePeriodTimeout = null;
+let isPinchGracePeriod = false; // Grace period flag to ignore drawing after pinch
 
 boardWrap.addEventListener('touchstart', (e) => {
+  // Clear any active grace period when a new touch starts
+  if (pinchGracePeriodTimeout) {
+    clearTimeout(pinchGracePeriodTimeout);
+    pinchGracePeriodTimeout = null;
+  }
+  isPinchGracePeriod = false;
+  
   if (e.touches.length === 2) {
     // Prevent any interference from other handlers during pinch
     e.preventDefault();
@@ -4606,6 +4633,14 @@ boardWrap.addEventListener('touchend', (e) => {
     if (pinchState) {
       e.preventDefault();
       e.stopPropagation();
+      
+      // Start grace period to prevent drawing/selection right after pinch ends
+      isPinchGracePeriod = true;
+      if (pinchGracePeriodTimeout) clearTimeout(pinchGracePeriodTimeout);
+      pinchGracePeriodTimeout = setTimeout(() => {
+        isPinchGracePeriod = false;
+        pinchGracePeriodTimeout = null;
+      }, 200); // 200ms grace period
     }
     lastTouchDistance = 0;
     pinchState = null;
@@ -4616,6 +4651,12 @@ boardWrap.addEventListener('touchcancel', (e) => {
   // Cancel pinch if touch is interrupted
   lastTouchDistance = 0;
   pinchState = null;
+  // Clear grace period on cancel
+  if (pinchGracePeriodTimeout) {
+    clearTimeout(pinchGracePeriodTimeout);
+    pinchGracePeriodTimeout = null;
+  }
+  isPinchGracePeriod = false;
 }, { passive: false });
 
 boardWrap.addEventListener('pointerenter', (e) => {
