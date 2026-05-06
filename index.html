@@ -273,6 +273,11 @@
       linear-gradient(90deg, transparent 23px, rgba(0,0,0,0.02) 24px);
     background-size:24px 24px;opacity:0.06;pointer-events:none;
   }
+
+  /* Drag and Drop document icon */
+  #drag-drop-icon {
+    display: none !important;
+  }
   
   .item{
     position:absolute;touch-action:none;user-select:none;box-sizing:border-box;
@@ -1056,6 +1061,8 @@
   </div>
 
   <footer><div class="hint">MagicBoard - ©2026 FOAcode</div></footer>
+
+  <div id="drag-drop-icon">📄</div>
 
   <div id="ext-warning" role="status" aria-live="polite">
     <div id="ext-warning-msg">A browser extension (e.g. Google Translate) appears active and may change the UI.</div>
@@ -5664,6 +5671,39 @@ if (importBtn) importBtn.addEventListener('click', () => {
     }
   };
   inp.click();
+});
+
+// --- Drag and Drop to load .wb files ---
+board.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  // Check if dragged items contain a .wb file
+  if (e.dataTransfer.types.includes('Files')) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+});
+
+board.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+
+board.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  if (e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    // Check if the dropped file is a .wb file
+    if (file.name.endsWith('.wb')) {
+      const loadingOverlay = document.getElementById('loading-overlay');
+      if (loadingOverlay) {
+        loadingOverlay.style.display = 'flex';
+      }
+      document.body.classList.add('is-loading-content');
+      await importWhiteboard(file);
+    }
+  }
 });
 
 // --- Copy selected items to clipboard ---
