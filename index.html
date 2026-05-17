@@ -808,6 +808,117 @@
       color: #1f2937 !important;
       box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
   }
+
+  /* License Modal Styles */
+  .footer-hint {
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+  }
+  
+  .footer-hint:hover {
+    opacity: 0.7;
+  }
+
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-content {
+    background: white;
+    border-radius: 10px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    animation: slideIn 0.3s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .modal-header {
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 16px;
+    color: #1f2937;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #9ca3af;
+    transition: color 0.2s ease;
+  }
+
+  .modal-close:hover {
+    color: #1f2937;
+  }
+
+  .modal-section {
+    margin-bottom: 16px;
+  }
+
+  .modal-section-label {
+    font-weight: 600;
+    font-size: 14px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  .modal-section-content {
+    font-size: 14px;
+    color: #374151;
+    line-height: 1.5;
+  }
+
+  .modal-link {
+    color: #2b6cb0;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .modal-link:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+  }
 </style>
 </head>
 <body>
@@ -1060,7 +1171,7 @@
     </aside>
   </div>
 
-  <footer><div class="hint">MagicBoard - ©2026 FOAcode</div></footer>
+  <footer><div class="hint footer-hint" id="footer-hint-clickable">MagicBoard - ©2026 FOAcode</div></footer>
 
   <div id="drag-drop-icon">📄</div>
 
@@ -1068,6 +1179,30 @@
     <div id="ext-warning-msg">A browser extension (e.g. Google Translate) appears active and may change the UI.</div>
     <button class="btn" id="ext-warning-hide">Hide injected UI</button>
     <button class="btn" id="ext-warning-close">Dismiss</button>
+  </div>
+
+  <!-- License Modal -->
+  <div id="license-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>About MagicBoard</span>
+        <button class="modal-close" id="license-modal-close">&times;</button>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-label">License</div>
+        <div class="modal-section-content">MIT License</div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-label">Copyright</div>
+        <div class="modal-section-content">Copyright © 2025-2026 FOAcode</div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-label">Project Repository</div>
+        <div class="modal-section-content">
+          <a href="https://github.com/FOAcode/MagicBoard" target="_blank" rel="noopener noreferrer" class="modal-link">https://github.com/FOAcode/MagicBoard</a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="stroke-popup" class="popup">
@@ -5888,6 +6023,28 @@ refreshLayers();
 undoStack = []; redoStack = []; pushHistory();
 // Start extension detection
 scheduleExtensionDetection();
+
+// License Modal Handler
+document.getElementById('footer-hint-clickable').addEventListener('click', () => {
+  document.getElementById('license-modal').classList.add('show');
+});
+
+document.getElementById('license-modal-close').addEventListener('click', () => {
+  document.getElementById('license-modal').classList.remove('show');
+});
+
+document.getElementById('license-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'license-modal') {
+    document.getElementById('license-modal').classList.remove('show');
+  }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.getElementById('license-modal').classList.remove('show');
+  }
+});
 </script>
 <script>
   if ('serviceWorker' in navigator) {
