@@ -3369,6 +3369,20 @@ function onBoardPointerDown(e) {
 
     const clickedOnItem = e.target.closest('.item, .stroke-wrapper, .stroke, .stroke-hit');
 
+    // Block move logic: if the user clicks inside the bounding box of the current selection, treat it as a group drag.
+    if (!clickedOnItem && state.tool === 'select' && state.selectedIds.size > 0) {
+      const selBounds = calculateSelectedBounds();
+      if (selBounds && pt.x >= selBounds.minX && pt.x <= selBounds.maxX && 
+          pt.y >= selBounds.minY && pt.y <= selBounds.maxY) {
+        const firstId = state.selectedIds.values().next().value;
+        const anchor = findNodeById(firstId);
+        if (anchor) {
+          startDragHtml(anchor, e);
+          return;
+        }
+      }
+    }
+
     if (!clickedOnItem && state.tool === 'select') {
       if (state.selectionMode === 'lasso') {
         isLassoing = true;
@@ -4460,6 +4474,29 @@ function calculateContentBounds() {
   });
 
   return { hasContent, minX, minY, maxX, maxY };
+}
+
+// Calculate the collective bounding box of all currently selected items in board-space coordinates
+function calculateSelectedBounds() {
+  if (state.selectedIds.size === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const boardRect = board.getBoundingClientRect();
+
+  state.selectedIds.forEach(id => {
+    const node = findNodeById(id);
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    // Convert screen coordinates to unscaled board coordinates
+    const x = (rect.left - boardRect.left) / state.scale;
+    const y = (rect.top - boardRect.top) / state.scale;
+    const w = rect.width / state.scale;
+    const h = rect.height / state.scale;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+  });
+  return { minX, minY, maxX, maxY };
 }
 
 // Fit the view to all content on the canvas
