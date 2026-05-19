@@ -1640,6 +1640,7 @@ function createSnapshot() {
     // FIX: Capture the wrapper's physical position
     const left = parseFloat(svgWrapper.style.left) || 0;
     const top = parseFloat(svgWrapper.style.top) || 0;
+    const wrapperId = svgWrapper.dataset.id; // Track which wrapper these strokes belong to
 
     g.querySelectorAll('.stroke').forEach(p => {
       const pathId = p.dataset.id;
@@ -1662,7 +1663,8 @@ function createSnapshot() {
         // FIX: Keep track of positions in history
         left: left,
         top: top,
-        straightLine: p?.dataset?.straightLine === 'true'
+        straightLine: p?.dataset?.straightLine === 'true',
+        wrapperId: wrapperId  // NEW: Track group membership
       });
     });
   });
@@ -1690,8 +1692,11 @@ function restoreSnapshot(snapshot) {
   drawing = false;
   isLassoing = false;
   isSelectingRect = false;
+  dragState = null;  // --- NEW: Clear drag state to prevent using stale node references ---
+  resizeState = null;  // --- NEW: Clear resize state to prevent using stale node references ---
   if (typeof lassoPath !== 'undefined' && lassoPath) { lassoPath.remove(); lassoPath = null; }
   if (typeof rectSelectPath !== 'undefined' && rectSelectPath) { rectSelectPath.remove(); rectSelectPath = null; }
+  state.selectedIds.clear();  // --- NEW: Clear selected IDs since those DOM elements are being recreated ---
   // -------------------------------------------------------------------------------------------------------
 
   // Clear existing items (including previously imported ones)
@@ -1700,8 +1705,24 @@ function restoreSnapshot(snapshot) {
     try { n.remove(); } catch(e) { console.warn('Failed to remove item:', e); }
   });
 
-  // --- Restore each item
+  // --- NEW: Group strokes by wrapper ID to preserve group structure during restore ---
+  const strokesByWrapper = {};
+  const nonStrokeItems = [];
+  
   for (const it of snapshot.items || []) {
+    if (it.type === 'stroke') {
+      const wrapperId = it.wrapperId || it.id; // Use wrapperId if available, fallback to pathId for backwards compat
+      if (!strokesByWrapper[wrapperId]) {
+        strokesByWrapper[wrapperId] = [];
+      }
+      strokesByWrapper[wrapperId].push(it);
+    } else {
+      nonStrokeItems.push(it);
+    }
+  }
+  
+  // --- Restore non-stroke items first (images, text) ---
+  for (const it of nonStrokeItems) {
     if (it.type === 'image') {
       const existing = board.querySelector(`.item[data-id="${it.id}"]`);
       if (existing) { try { existing.remove(); } catch(e) {} }
@@ -1751,50 +1772,62 @@ function restoreSnapshot(snapshot) {
         if (typeof fitText === 'function') fitText(p, w, h);
       }
     }
+  }
+  
+  // --- Restore stroke groups (all strokes from same wrapper in one SVG) ---
+  for (const wrapperId in strokesByWrapper) {
+    const strokes = strokesByWrapper[wrapperId];
+    if (strokes.length === 0) continue;
+    
+    // Get first stroke to determine wrapper-level properties
+    const firstStroke = strokes[0];
+    
+    const existing = board.querySelector(`.stroke-wrapper[data-id="${wrapperId}"]`);
+    if (existing) { try { existing.remove(); } catch(e) {} }
+    
+    const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgWrapper.classList.add('stroke-wrapper');
+    svgWrapper.dataset.type = 'stroke-group'; 
+    svgWrapper.dataset.id = wrapperId;
+    svgWrapper.style.zIndex = firstStroke.z || 0;
+    svgWrapper.style.left = (firstStroke.left ?? 0) + 'px';
+    svgWrapper.style.top = (firstStroke.top ?? 0) + 'px';
 
-    else if (it.type === 'stroke') {
-      const existing = board.querySelector(`.stroke-wrapper[data-id="${it.id}"]`);
-      if (existing) { try { existing.remove(); } catch(e) {} }
-      
-      const svgWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svgWrapper.classList.add('stroke-wrapper');
-      // FIX: Changed from 'stroke-wrapper' back to 'stroke-group'
-      svgWrapper.dataset.type = 'stroke-group'; 
-      svgWrapper.dataset.id = it.id;
-      svgWrapper.style.zIndex = it.z || 0;
-
-      // FIX: Restore the physical position (ensure it's set even when 0 to avoid CSS fallback issues)
-      svgWrapper.style.left = (it.left ?? 0) + 'px';
-      svgWrapper.style.top = (it.top ?? 0) + 'px';
-
-      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      if (it.transform) g.setAttribute('transform', it.transform);
-      svgWrapper.appendChild(g);
-
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    if (firstStroke.transform) g.setAttribute('transform', firstStroke.transform);
+    svgWrapper.appendChild(g);
+    
+    // --- Create markers (defs) once for the entire group ---
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    let hasMarkers = false;
+    
+    // --- Restore all strokes in this group ---
+    for (const it of strokes) {
       let markerStart = '', markerEnd = '';
       if (it.hasStartArrow || it.hasEndArrow) {
-        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
         const mid = `arrow-${it.id}`;
         const arrowSize = parseFloat(it.arrowSize) || 6;
+        
+        if (!document.getElementById(mid)) {
+          const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+          marker.id = mid;
+          marker.setAttribute('markerWidth', arrowSize);
+          marker.setAttribute('markerHeight', arrowSize);
+          marker.setAttribute('refX', arrowSize);
+          marker.setAttribute('refY', arrowSize / 2);
+          marker.setAttribute('markerUnits', 'strokeWidth');
+          marker.setAttribute('orient', 'auto-start-reverse');
+          marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
 
-        marker.id = mid;
-        marker.setAttribute('markerWidth', arrowSize);
-        marker.setAttribute('markerHeight', arrowSize);
-        marker.setAttribute('refX', arrowSize);
-        marker.setAttribute('refY', arrowSize / 2);
-        marker.setAttribute('markerUnits', 'strokeWidth');
-        marker.setAttribute('orient', 'auto-start-reverse');
-        marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          poly.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
+          poly.setAttribute('fill', it.stroke || '#000');
 
-        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        poly.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
-        poly.setAttribute('fill', it.stroke || '#000');
-
-        marker.appendChild(poly);
-        defs.appendChild(marker);
-        g.appendChild(defs);
-
+          marker.appendChild(poly);
+          defs.appendChild(marker);
+          hasMarkers = true;
+        }
+        
         if (it.hasStartArrow) markerStart = `url(#${mid})`;
         if (it.hasEndArrow) markerEnd = `url(#${mid})`;
       }
@@ -1802,6 +1835,7 @@ function restoreSnapshot(snapshot) {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.classList.add('stroke');
       path.dataset.id = it.id;
+      path.dataset.type = 'stroke';
       if (it.straightLine) path.dataset.straightLine = 'true';
       path.setAttribute('d', it.d || '');
       path.setAttribute('stroke', it.stroke || '#000');
@@ -1811,11 +1845,12 @@ function restoreSnapshot(snapshot) {
       if (markerEnd) path.setAttribute('marker-end', markerEnd);
 
       g.appendChild(path);
-      board.appendChild(svgWrapper);
-
       makePathSelectable(path);
-      makeSvgSelectable(g);
     }
+    
+    if (hasMarkers) g.insertBefore(defs, g.firstChild);
+    board.appendChild(svgWrapper);
+    makeSvgSelectable(g);
   }
 
   applyScale();
@@ -2795,8 +2830,14 @@ function findNodeById(idstr){
 // Make an SVG <g> element selectable as a whole, and also make its child <path> elements selectable individually. This allows users to select and move entire stroke groups or individual strokes within them.
 function makeSvgSelectable(gElement){
   gElement.addEventListener('pointerdown', (ev)=>{
-    // If the user is drawing, don't let clicks on existing stroke groups select them.
-    if (state.tool === 'draw') {
+    // Get wrapper info first to check selection state
+    const svgWrapper = gElement.closest('.stroke-wrapper');
+    const elId = svgWrapper.dataset.id;
+    const isAlreadySelected = state.selectedIds.has(elId);
+    
+    // --- BUGFIX: Only prevent selection if we're ACTIVELY drawing, not just in draw mode ---
+    // This allows users to select/drag strokes after undo even if tool is still set to 'draw'
+    if (state.tool === 'draw' && drawing && !isAlreadySelected) {
       // Prevent selection and allow the board-level draw handler to handle the event
       ev.preventDefault();
       ev.stopPropagation();
@@ -2806,12 +2847,8 @@ function makeSvgSelectable(gElement){
     ev.stopPropagation();
     
     finalizeStrokeGroup();
-    
-    const svgWrapper = gElement.closest('.stroke-wrapper');
-    const elId = svgWrapper.dataset.id;
 
     const addToSelection = ev.shiftKey;
-    const isAlreadySelected = state.selectedIds.has(elId);
 
     if (isAlreadySelected && addToSelection) {
       state.selectedIds.delete(elId);
@@ -2824,7 +2861,7 @@ function makeSvgSelectable(gElement){
       selectItem(elId, addToSelection);
     }
 
-    if (state.tool === 'select') {
+    if (state.tool === 'select' || (state.tool === 'draw' && isAlreadySelected)) {
       startDragSvg(gElement, ev); // Pass the <g> element to drag
     }
   });
@@ -2852,12 +2889,24 @@ function makePathSelectable(path){
   path._hitPath = hit;
 
   const onHitPointerDown = (ev) => {
-    if (state.tool === 'draw') { ev.preventDefault(); ev.stopPropagation(); return; }
+    const pid = path.dataset.id;
+    const isAlreadySelected = state.selectedIds.has(pid);
+
+    // --- BUGFIX: Only prevent selection if we're ACTIVELY drawing, not just in draw mode ---
+    // This allows users to select/drag strokes after undo even if tool is still set to 'draw'
+    if (state.tool === 'draw' && drawing) { 
+      if (!isAlreadySelected) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+    }
+    
     // If the parent stroke-wrapper is already selected, prefer to drag the wrapper
     const wrapper = path.closest('.stroke-wrapper');
     if (wrapper && state.selectedIds.has(wrapper.dataset.id)) {
       ev.stopPropagation();
-      if (state.tool === 'select') {
+      if (state.tool === 'select' || (state.tool === 'draw' && isAlreadySelected)) {
         const g = wrapper.querySelector('g');
         if (g) startDragSvg(g, ev);
       }
@@ -2865,22 +2914,20 @@ function makePathSelectable(path){
     }
     ev.stopPropagation();
     const addToSelection = ev.shiftKey;
-    const pid = path.dataset.id;
-    const isAlready = state.selectedIds.has(pid);
-    if (isAlready && addToSelection) {
+    if (isAlreadySelected && addToSelection) {
       state.selectedIds.delete(pid);
       path.classList.remove('selected');
       refreshLayers();
       return;
     }
-    if (!isAlready) {
+    if (!isAlreadySelected) {
       if (!addToSelection) clearSelection();
       state.selectedIds.add(pid);
       path.classList.add('selected');
       refreshLayers();
     }
 
-    if (state.tool === 'select') {
+    if (state.tool === 'select' || (state.tool === 'draw' && state.selectedIds.has(pid))) {
       // Start drag using the underlying path element so individual strokes move separately
       startDragSvg(path, ev);
     }
@@ -2904,6 +2951,10 @@ function startDragHtml(node, e){
   const startX = pt.x;
   const startY = pt.y;
   dragState = { type: 'html', startX, startY, items: [] };
+  
+  // --- NEW: Track processed nodes to avoid duplicates when multiple strokes from same group are selected ---
+  const processedNodes = new Set();
+  
   state.selectedIds.forEach(id => {
     const n = findNodeById(id);
     if (!n) return;
@@ -2911,16 +2962,26 @@ function startDragHtml(node, e){
     // FIX: Check for both dataset types defensively
     if (n.dataset.type === 'stroke-group' || n.dataset.type === 'stroke-wrapper') {
       const g = n.querySelector('g'); 
-      const orig = g.getAttribute('transform') || '';
-      const parsed = parseTransform(orig);
-      dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+      if (!processedNodes.has(g)) {
+        const orig = g.getAttribute('transform') || '';
+        const parsed = parseTransform(orig);
+        dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        processedNodes.add(g);
+      }
     } else if (n.dataset.type === 'stroke') {
-      // individual path selected
-      const orig = n.getAttribute('transform') || '';
-      const parsed = parseTransform(orig);
-      dragState.items.push({ node: n, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+      // individual path selected - get its parent g element
+      const g = n.closest('g');
+      if (g && !processedNodes.has(g)) {
+        const orig = g.getAttribute('transform') || '';
+        const parsed = parseTransform(orig);
+        dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        processedNodes.add(g);
+      }
     } else {
-      dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+      if (!processedNodes.has(n)) {
+        dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+        processedNodes.add(n);
+      }
     }
   });
   board.setPointerCapture(e.pointerId);
@@ -2931,6 +2992,10 @@ function startDragSvg(element, e){
   e.preventDefault();
   const pt = getBoardPointFromEvent(e);
   dragState = { type: 'svg', startX: pt.x, startY: pt.y, items: [] };
+  
+  // --- NEW: Track processed nodes to avoid duplicates when multiple strokes from same group are selected ---
+  const processedNodes = new Set();
+  
   state.selectedIds.forEach(id => {
     const n = findNodeById(id);
     if (!n) return;
@@ -2943,14 +3008,22 @@ function startDragSvg(element, e){
     } else if (n.dataset.type === 'stroke') {
       gElement = n.closest('g');
     } else {
-      dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+      // For HTML items, check if already processed (shouldn't happen but be safe)
+      if (!processedNodes.has(n)) {
+        dragState.items.push({ node: n, type: 'html', origLeft: parseFloat(n.style.left) || 0, origTop: parseFloat(n.style.top) || 0 });
+        processedNodes.add(n);
+      }
       return;
     }
     
     if (gElement) {
-      const orig = gElement.getAttribute('transform') || '';
-      const parsed = parseTransform(orig);
-      dragState.items.push({ node: gElement, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+      // --- NEW: De-duplicate SVG transforms to prevent the same g element from being processed multiple times ---
+      if (!processedNodes.has(gElement)) {
+        const orig = gElement.getAttribute('transform') || '';
+        const parsed = parseTransform(orig);
+        dragState.items.push({ node: gElement, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        processedNodes.add(gElement);
+      }
     }
   });
   board.setPointerCapture(e.pointerId);
@@ -2997,6 +3070,12 @@ function onPointerUp(e) {
   // for accidental micro-drags or simple clicks.
   const hasMoved = Math.abs(dx) > 1 || Math.abs(dy) > 1;
 
+  // --- NEW: Create snapshot BEFORE modifying items to ensure consistent state capture ---
+  let stateBeforeMove = null;
+  if (hasMoved) {
+    stateBeforeMove = createSnapshot();
+  }
+
   dragState.items.forEach(item => {
     if (item.type === 'svg') {
       const element = item.node;
@@ -3023,13 +3102,24 @@ function onPointerUp(e) {
   });
 
   try { board.releasePointerCapture?.(e.pointerId); } catch(e) {}
+  
+  const currentState = dragState; // Save reference before nulling
   dragState = null;
 
   refreshLayers();
 
   // ✅ MODIFICATION: Only push history if the item was actually moved
-  if (hasMoved) {
-    pushHistory();
+  // Compare state before and after to ensure the move actually changed something
+  if (hasMoved && stateBeforeMove) {
+    const stateAfterMove = createSnapshot();
+    // Only record in history if the state actually changed
+    if (!snapshotItemsEqual(stateBeforeMove.items, stateAfterMove.items)) {
+      // BUGFIX: Push the state AFTER the move, not before
+      undoStack.push(stateAfterMove);
+      if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+      redoStack = [];
+      updateUndoRedoButtons();
+    }
   }
 }
 
