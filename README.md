@@ -56,7 +56,7 @@ No build process, no dependencies to install—just open and draw.
   - Lasso selection tool (freehand selection of multiple items)
   - Rectangular selection mode
   - Individual item selection
-- **Multi-Select**: `Ctrl/Cmd` + Click to add/remove items from selection
+- **Multi-Select**: `Shift` + Click to add/remove items from selection
 - **Layer Management**:
   - Bring Forward / Send to Back
   - Visual layer panel showing all objects
@@ -101,28 +101,29 @@ No build process, no dependencies to install—just open and draw.
 
 ## ⌨️ Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| **Tool Selection** |
-| `S` | Select Tool |
-| `D` | Draw Tool |
-| `T` | Text Tool |
-| **Drawing** |
-| `Shift` | Draw connected straight lines |
-| `Shift` + `Alt` | Draw individual straight line segments |
-| `Shift` + `Ctrl` | Snap line angle to 15° increments |
-| **Editing** |
-| `Ctrl` + `Z` | Undo |
-| `Ctrl` + `Y` | Redo |
-| `Delete` / `Backspace` | Delete selected item(s) |
-| `Ctrl` + `C` | Copy selected items |
-| `Ctrl` + `V` | Paste images or items |
-| **Navigation** |
-| `Ctrl` + `Scroll` | Zoom in/out |
-| `Ctrl` + `F` | Refit to content |
-| **Selection** |
-| `Ctrl` / `Cmd` + Click | Add/remove item from selection |
-| `Esc` | Clear selection / Close modals |
+| Action | Windows / Linux | macOS |
+|:---|:---|:---|
+| **Tool Selection** | | |
+| Select Tool | `S` | `S` |
+| Draw Tool | `D` | `D` |
+| Text Tool | `T` | `T` |
+| **Drawing** | | |
+| Connected Straight Lines | `Shift` (Hold) | `Shift` (Hold) |
+| Individual Line Segments | `Shift` + `Alt` | `Shift` + `Option` |
+| Angle Snapping (15°) | `Shift` + `Ctrl` | `Shift` + `Cmd` |
+| **Editing** | | |
+| Undo | `Ctrl` + `Z` | `Cmd` + `Z` |
+| Redo | `Ctrl` + `Y` / `Ctrl` + `Shift` + `Z` | `Cmd` + `Y` / `Cmd` + `Shift` + `Z` |
+| Delete Selected | `Delete` / `Backspace` | `Delete` / `Backspace` |
+| Copy Selection | `Ctrl` + `C` | `Cmd` + `C` |
+| Paste | `Ctrl` + `V` | `Cmd` + `V` |
+| **Navigation** | | |
+| Zoom In/Out | `Ctrl` + `Scroll` | `Cmd` + `Scroll` (or Pinch) |
+| Refit to Content | `Ctrl` + `F` | `Cmd` + `F` |
+| Pan Canvas | `Middle Click` (Hold) | `Middle Click` / `Space` (Hold) |
+| **Selection** | | |
+| Add/Remove Multi-select | `Shift` + `Click` | `Shift` + `Click` |
+| Clear Selection | `Esc` | `Esc` |
 
 ---
 

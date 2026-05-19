@@ -2944,7 +2944,7 @@ function makePathSelectable(path){
 let dragState = null;
 
 function startDragHtml(node, e){
-  if(state.tool !== 'select' && !(state.tool === 'text' && e.ctrlKey)) return;
+  if(state.tool !== 'select' && !(state.tool === 'text' && (e.ctrlKey || e.metaKey))) return;
   if (!state.selectedIds.has(node.dataset.id)) return;
   e.preventDefault();
   const pt = getBoardPointFromEvent(e);
@@ -3613,7 +3613,7 @@ function onBoardPointerMove(e) {
         currentPath.removeAttribute('marker-end');
       }
 
-      if (e.ctrlKey) {
+      if (e.ctrlKey || e.metaKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         
         // Build preview path - show what final path will look like based on rounded setting
@@ -3754,7 +3754,7 @@ function onBoardPointerUp(e){
       const anchorY = straightLineState.lastY ?? straightLineState.startY;
       let finalX = x, finalY = y;
       
-      if (e.ctrlKey) {
+      if (e.ctrlKey || e.metaKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         finalX = snapped.x; finalY = snapped.y;
       }
@@ -3923,7 +3923,7 @@ function attachItemBehaviors(node){
       selectItem(node.dataset.id, addToSelection);
     }
     
-    if (state.tool === 'select' || (state.tool === 'text' && e.ctrlKey)) {
+    if (state.tool === 'select' || (state.tool === 'text' && (e.ctrlKey || e.metaKey))) {
       startDragHtml(node, e);
     }
   });
@@ -4767,7 +4767,7 @@ let panStartScrollX = 0;
 let panStartScrollY = 0;
 
 boardWrap.addEventListener('wheel', (e)=>{
-  if (!e.ctrlKey) return; // only when Ctrl is pressed
+  if (!e.ctrlKey && !e.metaKey) return; // only when Ctrl or Cmd is pressed
   e.preventDefault();
 
   const rect = board.getBoundingClientRect();
