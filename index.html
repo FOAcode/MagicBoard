@@ -1494,6 +1494,7 @@ let isRestoringHistory = false; // Guard to avoid recording history while restor
 // Slider history guard: record snapshot at slider start and final at end
 let sliderChanging = false;
 let isDeleting = false;
+let ignoreNextBlurHistory = false;
 
 window.addEventListener('resize', () => {
     // We don't want to check for overflow while resizing is in progress
@@ -1758,7 +1759,7 @@ function restoreSnapshot(snapshot) {
       if (existing) { try { existing.remove(); } catch(e) {} }
       
       const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
-        id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true
+        id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true
       });
       item.style.zIndex = it.z || 0;
 
@@ -2311,6 +2312,11 @@ const rgb = hexToRgbCached(state.text.bgColor);
   });
   p.addEventListener('blur', () => {
     if (isDeleting) return; // <-- UPDATED: Guard against blur-on-delete
+    if (ignoreNextBlurHistory) {
+      ignoreNextBlurHistory = false;
+      return;
+    }
+    delete wrapper.dataset.isNew;
     if (p.innerText.trim() === '') p.innerText = 'Type...';
     pushHistory(); // capture text edit in history
   });
@@ -2333,6 +2339,7 @@ const rgb = hexToRgbCached(state.text.bgColor);
   
   // --- MODIFIED: Skip focus during import ---
   if (!options.skipFocus) {
+    wrapper.dataset.isNew = 'true';
     setTimeout(() => {
       p.focus();
       document.execCommand('selectAll', false, null);
@@ -2340,7 +2347,7 @@ const rgb = hexToRgbCached(state.text.bgColor);
     }, 0);
   }
   // --- END MODIFICATION ---
-  // if (!options.skipHistory) pushHistory(); // <-- UPDATED: This line is intentionally removed/commented
+  if (!options.skipHistory) pushHistory();
   return wrapper;
 }
 
@@ -4475,8 +4482,28 @@ document.addEventListener('click', (e) => {
 
 // Undo/Redo wiring
 const undoBtnEl = el('#undo-btn'); const redoBtnEl = el('#redo-btn');
-if (undoBtnEl) undoBtnEl.addEventListener('click', ()=> undo());
-if (redoBtnEl) redoBtnEl.addEventListener('click', ()=> redo());
+if (undoBtnEl) {
+  undoBtnEl.addEventListener('pointerdown', () => {
+    if (document.activeElement && document.activeElement.classList.contains('text-item')) {
+      const wrapper = document.activeElement.closest('.item');
+      if (wrapper && wrapper.dataset.isNew === 'true') {
+        ignoreNextBlurHistory = true;
+      }
+    }
+  });
+  undoBtnEl.addEventListener('click', () => undo());
+}
+if (redoBtnEl) {
+  redoBtnEl.addEventListener('pointerdown', () => {
+    if (document.activeElement && document.activeElement.classList.contains('text-item')) {
+      const wrapper = document.activeElement.closest('.item');
+      if (wrapper && wrapper.dataset.isNew === 'true') {
+        ignoreNextBlurHistory = true;
+      }
+    }
+  });
+  redoBtnEl.addEventListener('click', () => redo());
+}
 updateUndoRedoButtons();
 
 /* Zoom controls: apply scale only to the board element (toolbar & footer unaffected) */
@@ -6112,7 +6139,21 @@ window.addEventListener('keydown', (e)=>{
     }
   }
 
-  if (isInputFocused) return;
+  const isUndoRedoShortcut = (e.ctrlKey || e.metaKey) && ['z', 'y'].includes(e.key.toLowerCase());
+  let shouldBypassInputCheck = false;
+  if (isUndoRedoShortcut && document.activeElement && document.activeElement.classList.contains('text-item')) {
+    const wrapper = document.activeElement.closest('.item');
+    if (wrapper && wrapper.dataset.isNew === 'true') {
+      shouldBypassInputCheck = true;
+    } else {
+      const text = document.activeElement.innerText.trim();
+      if (text === '' || text === 'Type...') {
+        shouldBypassInputCheck = true;
+      }
+    }
+  }
+
+  if (isInputFocused && !shouldBypassInputCheck) return;
   if(e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
   if(e.key === 's') { document.activeElement?.blur(); setTool('select'); }
   if(e.key === 'd') { document.activeElement?.blur(); setTool('draw'); }

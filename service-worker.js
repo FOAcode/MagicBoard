@@ -1,6 +1,6 @@
 // Service Worker Script: stale-while-revalidate
 
-const CACHE_NAME = 'MagicBoard_cache_v4';
+const CACHE_NAME = 'MagicBoard_cache_v5';
 const FILES_TO_CACHE = [
     './',
     './index.html',
@@ -22,7 +22,7 @@ self.addEventListener('install', event => {
 // Activate: clean old caches
 self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(keys => 
+        caches.keys().then(keys =>
             Promise.all(keys.map(key => {
                 if (key !== CACHE_NAME) return caches.delete(key);
             }))
