@@ -312,14 +312,27 @@ function finalizeStrokeGroup() {
         if (currentStrokeGroup.children.length === 0) {
             currentSvgWrapper.remove();
         } else {
-            makeSvgSelectable(currentStrokeGroup);
+            // For non-rounded single straight-line segments, path-level selection is
+            // already set up by makePathSelectable() inside startStroke(). Calling
+            // makeSvgSelectable() here would add a g-element handler that selects by
+            // wrapper-id on ANY click in the element's bounding box, causing the whole
+            // connected path to appear selected. Skip it for individual segments.
+            const strokes = currentStrokeGroup.querySelectorAll('.stroke');
+            const isSingleStraightSegment =
+                strokes.length === 1 &&
+                strokes[0].dataset.straightLine === 'true' &&
+                !state.stroke.rounded;
+            if (!isSingleStraightSegment) {
+                makeSvgSelectable(currentStrokeGroup);
+            }
             refreshLayers();
         }
         currentStrokeGroup = null;
         currentSvgWrapper = null;
         currentPath = null;
     }
-    straightLineState = null;
+    // NOTE: straightLineState is intentionally NOT cleared here.
+    // Callers that manage connected-line chains update it themselves.
     clearSelection();
 }
 
@@ -702,6 +715,7 @@ function redo(){
 function setTool(t){
   if (state.tool === 'draw' && t !== 'draw') {
     finalizeStrokeGroup();
+    straightLineState = null;
   }
 
   // Check if any images are selected before changing tool
@@ -2112,43 +2126,58 @@ function onBoardPointerDown(e) {
 
     if (e.shiftKey) {
       const isSingleLineMode = e.altKey;
-      if (straightLineState && straightLineState.isInterrupted && !isSingleLineMode)
+      if (straightLineState && straightLineState.isInterrupted && !isSingleLineMode) {
         finalizeStrokeGroup();
+        straightLineState = null;
+      }
 
       if (straightLineState && !isSingleLineMode) {
         drawing = true;
         board.setPointerCapture?.(e.pointerId);
-        if (!straightLineState.points) {
-          straightLineState.points = [
-            { x: straightLineState.startX, y: straightLineState.startY }
-          ];
+
+        if (state.stroke.rounded) {
+          // ROUNDED: keep building up the same single path — do NOT start a new stroke.
+          // currentPath / currentStrokeGroup remain active from the previous segment.
+          if (!straightLineState.points) {
+            straightLineState.points = [
+              { x: straightLineState.startX, y: straightLineState.startY }
+            ];
+          }
+          // nothing else needed — pointerMove will preview the full accumulated polyline
+        } else {
+          // NON-ROUNDED: each segment is its own independent stroke item.
+          const startX = straightLineState.lastX ?? straightLineState.startX ?? x;
+          const startY = straightLineState.lastY ?? straightLineState.startY ?? y;
+          const isSingle = straightLineState.isSingle;
+          finalizeStrokeGroup(); // saves previous segment; does NOT clear straightLineState
+          currentPath = startStroke(startX, startY, e);
+          currentPath.dataset.straightLine = 'true';
+          const d = `M ${startX} ${startY} L ${x} ${y}`;
+          currentPath.setAttribute('d', d);
+          if (currentPath._hitPath) currentPath._hitPath.setAttribute('d', d);
+          // Re-establish state so the chain anchor stays correct
+          straightLineState = {
+            startX, startY, lastX: startX, lastY: startY,
+            isSingle, isInterrupted: false,
+            points: [{ x: startX, y: startY }]
+          };
         }
       } else {
+        // Brand-new straight-line chain
         drawing = true;
         board.setPointerCapture?.(e.pointerId);
         finalizeStrokeGroup();
         currentPath = startStroke(x, y, e);
-
         currentPath.dataset.straightLine = 'true';
-        
-        // MODIFIED: M x y L x y creates a visible "dot" immediately
+
         const d = `M ${x} ${y} L ${x} ${y}`;
         currentPath.setAttribute('d', d);
-        
-        // Update the invisible hit-path so the dot is selectable/movable later
-        const hitPath = currentPath.parentNode ? currentPath.parentNode.querySelector('.stroke-hit') : null;
-        if (hitPath) hitPath.setAttribute('d', d);
+        if (currentPath._hitPath) currentPath._hitPath.setAttribute('d', d);
 
         straightLineState = {
-          startX: x,
-          startY: y,
-          lastX: x,
-          lastY: y,
-          basePath: d,
-          points: [{ x, y }],
-          isPending: true,
-          isSingle: isSingleLineMode,
-          isInterrupted: false
+          startX: x, startY: y, lastX: x, lastY: y,
+          isSingle: isSingleLineMode, isInterrupted: false,
+          points: [{ x, y }]  // seed for rounded-mode accumulation
         };
       }
     } else {
@@ -2304,7 +2333,7 @@ function onBoardPointerMove(e) {
       const anchorX = straightLineState.lastX ?? straightLineState.startX;
       const anchorY = straightLineState.lastY ?? straightLineState.startY;
 
-      // --- UPDATED GUIDING LINES LOGIC (Follow Mouse) ---
+      // --- GUIDING LINES LOGIC ---
       if (guides && guideH && guideV) {
         guides.style.display = 'block';
         
@@ -2316,86 +2345,28 @@ function onBoardPointerMove(e) {
         guideV.setAttribute('x1', x);
         guideV.setAttribute('x2', x);
       }
-      // --- END GUIDING LINES LOGIC ---
 
-      if (state.stroke.startArrow || state.stroke.endArrow) {
-        let defs = currentStrokeGroup.querySelector('defs');
-        if (!defs) {
-            const uid = currentStrokeGroup.dataset.id;
-            defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const markerId = `arrow-${uid}`;
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            
-            const arrowSize = state.stroke.arrowSize;
-            marker.id = markerId;
-            marker.setAttribute('markerWidth', arrowSize);
-            marker.setAttribute('markerHeight', arrowSize);
-            marker.setAttribute('refX', arrowSize);
-            marker.setAttribute('refY', arrowSize / 2);
-            marker.setAttribute('markerUnits', 'strokeWidth');
-            marker.setAttribute('orient', 'auto-start-reverse');
-            marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
-
-            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-            polygon.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
-            polygon.setAttribute('fill', state.stroke.color);
-            
-            marker.appendChild(polygon);
-            defs.appendChild(marker);
-            currentPath.dataset.arrowSize = arrowSize;
-            
-            // 👇 ADD THIS LINE to attach the definitions to the DOM
-            currentStrokeGroup.appendChild(defs); 
-        }
-
-        const markerId = `arrow-${currentStrokeGroup.dataset.id}`;
-        const marker = defs.querySelector('marker');
-        if (marker) {
-            marker.querySelector('polygon').setAttribute('fill', state.stroke.color);
-        }
-
-        if (state.stroke.startArrow) currentPath.setAttribute('marker-start', `url(#${markerId})`);
-        else currentPath.removeAttribute('marker-start');
-
-        if (state.stroke.endArrow) currentPath.setAttribute('marker-end', `url(#${markerId})`);
-        else currentPath.removeAttribute('marker-end');
-
-      } else {
-        currentPath.removeAttribute('marker-start');
-        currentPath.removeAttribute('marker-end');
-      }
-
+      let targetX = x, targetY = y;
       if (e.ctrlKey || e.metaKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
-        
-        // Build preview path - show what final path will look like based on rounded setting
-        let previewPts = [];
-        if (straightLineState.points) {
-          previewPts = [...straightLineState.points];
-        } else {
-          previewPts = [{x: straightLineState.startX, y: straightLineState.startY}];
-        }
-        previewPts.push({x: snapped.x, y: snapped.y});
-        const previewPath = buildPolylinePath(previewPts, state.stroke.rounded, 1.5);
-        currentPath.setAttribute('d', previewPath);
-        
-        // Optional: If Alt is held and snapped, update guides to match the snapped position
-        guideH.setAttribute('y1', snapped.y);
-        guideH.setAttribute('y2', snapped.y);
-        guideV.setAttribute('x1', snapped.x);
-        guideV.setAttribute('x2', snapped.x);
-      } else {
-        // Build preview path - show what final path will look like based on rounded setting
-        let previewPts = [];
-        if (straightLineState.points) {
-          previewPts = [...straightLineState.points];
-        } else {
-          previewPts = [{x: straightLineState.startX, y: straightLineState.startY}];
-        }
-        previewPts.push({x: x, y: y});
-        const previewPath = buildPolylinePath(previewPts, state.stroke.rounded, 1.5);
-        currentPath.setAttribute('d', previewPath);
+        targetX = snapped.x; targetY = snapped.y;
+        guideH.setAttribute('y1', targetY);
+        guideH.setAttribute('y2', targetY);
+        guideV.setAttribute('x1', targetX);
+        guideV.setAttribute('x2', targetX);
       }
+
+      let d;
+      if (state.stroke.rounded && straightLineState.points && straightLineState.points.length > 0) {
+        // ROUNDED: preview the full accumulated polyline plus the segment-in-progress
+        const previewPts = [...straightLineState.points, { x: targetX, y: targetY }];
+        d = buildPolylinePath(previewPts, true, 1.5);
+      } else {
+        // NON-ROUNDED (or first segment): just the current segment
+        d = `M ${anchorX} ${anchorY} L ${targetX} ${targetY}`;
+      }
+      currentPath.setAttribute('d', d);
+      if (currentPath._hitPath) currentPath._hitPath.setAttribute('d', d);
     } else {
       if (guides) guides.style.display = 'none';
       currentPath.removeAttribute('marker-start');
@@ -2510,35 +2481,48 @@ function onBoardPointerUp(e){
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         finalX = snapped.x; finalY = snapped.y;
       }
-      
-      // Track points if not already done
-      if (!straightLineState.points) {
-        straightLineState.points = [
-          { x: straightLineState.startX, y: straightLineState.startY }
-        ];
-      }
-      
-      // Add the new point only if it's different from the last point
-      const lastPt = straightLineState.points[straightLineState.points.length - 1];
-      if (!lastPt || lastPt.x !== finalX || lastPt.y !== finalY) {
-        straightLineState.points.push({ x: finalX, y: finalY });
-      }
-      
-      // Build final path using clean helper function with correct rounding setting
-      const d = buildPolylinePath(straightLineState.points, state.stroke.rounded, 1.5);
-      currentPath.setAttribute('d', d);
 
-      if (straightLineState.isSingle) {
-        finalizeStrokeGroup();
-        currentPath = null;
-      } else if (e.shiftKey) {
-        straightLineState.isPending = false;
-        straightLineState.basePath = d;
-        straightLineState.lastX = finalX;
-        straightLineState.lastY = finalY;
+      const wasSingle = straightLineState.isSingle;
+
+      if (state.stroke.rounded) {
+        // ROUNDED: accumulate all segment endpoints into a single polyline path.
+        // Only finalize (save) the whole polyline when the chain ends.
+        if (!straightLineState.points) {
+          straightLineState.points = [{ x: anchorX, y: anchorY }];
+        }
+        const lastPt = straightLineState.points[straightLineState.points.length - 1];
+        if (!lastPt || lastPt.x !== finalX || lastPt.y !== finalY) {
+          straightLineState.points.push({ x: finalX, y: finalY });
+        }
+        const d = buildPolylinePath(straightLineState.points, true, 1.5);
+        currentPath.setAttribute('d', d);
+        if (currentPath._hitPath) currentPath._hitPath.setAttribute('d', d);
+
+        if (wasSingle || !e.shiftKey) {
+          finalizeStrokeGroup(); // save the whole multi-segment polyline as one item
+          straightLineState = null;
+        } else {
+          // Continue accumulating — keep currentPath alive
+          straightLineState.lastX = finalX;
+          straightLineState.lastY = finalY;
+          straightLineState.isInterrupted = false;
+        }
       } else {
-        finalizeStrokeGroup();
-        currentPath = null;
+        // NON-ROUNDED: finalize this segment as its own independent item.
+        const d = `M ${anchorX} ${anchorY} L ${finalX} ${finalY}`;
+        currentPath.setAttribute('d', d);
+        if (currentPath._hitPath) currentPath._hitPath.setAttribute('d', d);
+
+        finalizeStrokeGroup(); // saves this segment; does NOT clear straightLineState
+
+        if (wasSingle || !e.shiftKey) {
+          straightLineState = null;
+        } else {
+          // Keep the chain alive — update anchor to the freshly placed endpoint
+          straightLineState.lastX = finalX;
+          straightLineState.lastY = finalY;
+          straightLineState.isInterrupted = false;
+        }
       }
     } else {
       if (currentPath) addPointToPath(currentPath, x, y, e);
@@ -2704,6 +2688,8 @@ function deleteSelected() {
   ids.forEach(id => {
     const node = findNodeById(id);
     if (!node) return;
+    const parentG = node.closest ? node.closest('g') : null;
+    const parentWrapper = node.closest ? node.closest('.stroke-wrapper') : null;
     // If it's an individual SVG stroke path, also remove its invisible hit-path if present
     if (node.dataset.type === 'stroke') {
       try {
@@ -2717,7 +2703,10 @@ function deleteSelected() {
         }
       } catch (err) { /* ignore */ }
     }
-    node.remove(); // This works for both .item and .stroke-wrapper
+    node.remove(); // This works for both .item and .stroke-wrapper and .stroke path
+    if (parentG && parentG.querySelectorAll('.stroke').length === 0 && parentWrapper) {
+      parentWrapper.remove();
+    }
   });
   clearSelection();
   refreshLayers();
@@ -4932,9 +4921,13 @@ window.addEventListener('keydown', (e)=>{
 window.addEventListener('keyup', (e) => {
     if (e.key === 'Shift') {
         drawingGuides.style.display = 'none';
-        if (straightLineState && !straightLineState.isSingle) {
-            straightLineState.isInterrupted = true;
+        // For rounded mode, finalize any accumulated multi-point polyline path that
+        // was being built across multiple segments (user released Shift between segments).
+        if (state.stroke.rounded && straightLineState && currentPath && currentStrokeGroup && !drawing) {
+            finalizeStrokeGroup();
+            pushHistory();
         }
+        straightLineState = null;
     }
 });
 
