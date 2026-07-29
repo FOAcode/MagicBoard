@@ -2337,23 +2337,37 @@ function onBoardPointerMove(e) {
       if (guides && guideH && guideV) {
         guides.style.display = 'block';
         
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if (clientX === undefined && e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        }
+        if (clientX === undefined) { clientX = 0; clientY = 0; }
+        
         // Move the horizontal guide to follow the mouse Y
-        guideH.setAttribute('y1', y);
-        guideH.setAttribute('y2', y);
+        guideH.setAttribute('y1', clientY);
+        guideH.setAttribute('y2', clientY);
         
         // Move the vertical guide to follow the mouse X
-        guideV.setAttribute('x1', x);
-        guideV.setAttribute('x2', x);
+        guideV.setAttribute('x1', clientX);
+        guideV.setAttribute('x2', clientX);
       }
 
       let targetX = x, targetY = y;
       if (e.ctrlKey || e.metaKey) {
         const snapped = snapToAngle(anchorX, anchorY, x, y, 15);
         targetX = snapped.x; targetY = snapped.y;
-        guideH.setAttribute('y1', targetY);
-        guideH.setAttribute('y2', targetY);
-        guideV.setAttribute('x1', targetX);
-        guideV.setAttribute('x2', targetX);
+        
+        // Convert snapped board coordinates back to screen coordinates for the guides
+        const boardRect = board.getBoundingClientRect();
+        const screenSnappedX = targetX * state.scale + boardRect.left;
+        const screenSnappedY = targetY * state.scale + boardRect.top;
+        
+        guideH.setAttribute('y1', screenSnappedY);
+        guideH.setAttribute('y2', screenSnappedY);
+        guideV.setAttribute('x1', screenSnappedX);
+        guideV.setAttribute('x2', screenSnappedX);
       }
 
       let d;
@@ -3142,12 +3156,19 @@ board.addEventListener('pointerup', (e) => {
 
 board.addEventListener('pointermove', (e) => {
     if (state.tool === 'draw' && e.shiftKey) {
-        const pt = getBoardPointFromEvent(e);
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if (clientX === undefined && e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        }
+        if (clientX === undefined) { clientX = 0; clientY = 0; }
+        
         drawingGuides.style.display = 'block';
-        guideH.setAttribute('y1', pt.y);
-        guideH.setAttribute('y2', pt.y);
-        guideV.setAttribute('x1', pt.x);
-        guideV.setAttribute('x2', pt.x);
+        guideH.setAttribute('y1', clientY);
+        guideH.setAttribute('y2', clientY);
+        guideV.setAttribute('x1', clientX);
+        guideV.setAttribute('x2', clientX);
     }
 });
 
@@ -4856,11 +4877,22 @@ window.addEventListener('keydown', (e)=>{
   if (e.key === 'Shift' && state.tool === 'draw' && !isInputFocused) {
     drawingGuides.style.display = 'block';
     if (lastMouseEvent) {
-        const pt = getBoardPointFromEvent(lastMouseEvent);
-        guideH.setAttribute('y1', pt.y);
-        guideH.setAttribute('y2', pt.y);
-        guideV.setAttribute('x1', pt.x);
-        guideV.setAttribute('x2', pt.x);
+        let clientX = lastMouseEvent.clientX;
+        let clientY = lastMouseEvent.clientY;
+        if (clientX === undefined && lastMouseEvent.touches && lastMouseEvent.touches.length > 0) {
+            clientX = lastMouseEvent.touches[0].clientX;
+            clientY = lastMouseEvent.touches[0].clientY;
+        }
+        if (clientX === undefined && lastMouseEvent.changedTouches && lastMouseEvent.changedTouches.length > 0) {
+            clientX = lastMouseEvent.changedTouches[0].clientX;
+            clientY = lastMouseEvent.changedTouches[0].clientY;
+        }
+        if (clientX === undefined) { clientX = 0; clientY = 0; }
+        
+        guideH.setAttribute('y1', clientY);
+        guideH.setAttribute('y2', clientY);
+        guideV.setAttribute('x1', clientX);
+        guideV.setAttribute('x2', clientX);
     }
   }
 
