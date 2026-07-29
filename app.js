@@ -113,15 +113,35 @@ let lastMouseEvent = null;
 window.addEventListener('pointermove', e => {
   lastMouseEvent = e;
 
+  if (state.tool === 'draw' && !isPanning) {
+    const isOverBoard = e.target && (e.target === board || board.contains(e.target));
+    const customCursor = document.getElementById('custom-cursor');
+    const guides = document.getElementById('drawing-guides');
+
+    if (isOverBoard || drawing) {
+      board.style.cursor = 'none';
+      updateCustomCursorPosition();
+      if (customCursor && customCursor.style.display === 'none') {
+        customCursor.style.display = 'block';
+      }
+    } else {
+      if (customCursor && customCursor.style.display !== 'none') {
+        customCursor.style.display = 'none';
+      }
+      if (guides && guides.style.display !== 'none') {
+        guides.style.display = 'none';
+      }
+    }
+  }
+
   const pt = getBoardPointFromEvent(e);
-  if (guideH && guideV) {
+  const guides = document.getElementById('drawing-guides');
+  if (guideH && guideV && guides && guides.style.display !== 'none') {
     guideH.setAttribute('y1', pt.y);
     guideH.setAttribute('y2', pt.y);
     guideV.setAttribute('x1', pt.x);
     guideV.setAttribute('x2', pt.x);
   }
-  // Update cursor position immediately when in draw mode
-  updateCustomCursorPosition();
 });
 
 // --- MODIFIED: Unified z-index system ---
@@ -255,9 +275,23 @@ function updateCachedBoardRect() {
 }
 
 function getBoardPointFromEvent(e){
-  if (!cachedBoardRect) updateCachedBoardRect();
-  const x = (e.clientX - cachedBoardRect.left) / state.scale;
-  const y = (e.clientY - cachedBoardRect.top) / state.scale;
+  if (!board) return { x: 0, y: 0 };
+  const rect = board.getBoundingClientRect();
+  let clientX = e.clientX;
+  let clientY = e.clientY;
+  if (clientX === undefined && e.touches && e.touches.length > 0) {
+    clientX = e.touches[0].clientX;
+    clientY = e.touches[0].clientY;
+  } else if (clientX === undefined && e.changedTouches && e.changedTouches.length > 0) {
+    clientX = e.changedTouches[0].clientX;
+    clientY = e.changedTouches[0].clientY;
+  }
+  if (clientX === undefined) {
+    clientX = 0;
+    clientY = 0;
+  }
+  const x = (clientX - rect.left) / state.scale;
+  const y = (clientY - rect.top) / state.scale;
   return { x, y };
 }
 
@@ -871,7 +905,7 @@ function setTool(t){
 function updateCustomCursorPosition() {
   if (!lastMouseEvent) return;
   const customCursor = document.getElementById('custom-cursor');
-  if (!customCursor || customCursor.style.display === 'none' || isPanning) return;
+  if (!customCursor || isPanning) return;
   
   const pt = getBoardPointFromEvent(lastMouseEvent);
   customCursor.setAttribute('transform', `translate(${pt.x}, ${pt.y})`);
@@ -3668,9 +3702,15 @@ boardWrap.addEventListener('touchcancel', (e) => {
 
 boardWrap.addEventListener('pointerenter', (e) => {
   if (!isPanning) {
+    lastMouseEvent = e;
     // Set cursor based on current tool
     if (state.tool === 'draw') {
       board.style.cursor = 'none';
+      const customCursor = el('#custom-cursor');
+      if (customCursor) {
+        updateCustomCursorPosition();
+        customCursor.style.display = 'block';
+      }
     } else if (state.tool === 'text') {
       board.style.cursor = 'text';
     } else {
@@ -3735,6 +3775,21 @@ boardWrap.addEventListener('pointerleave', (e) => {
     isPanning = false;
   }
   board.style.cursor = 'default';
+  if (!drawing) {
+    const customCursor = el('#custom-cursor');
+    if (customCursor) customCursor.style.display = 'none';
+    const guides = document.getElementById('drawing-guides');
+    if (guides) guides.style.display = 'none';
+  }
+});
+
+document.addEventListener('mouseleave', () => {
+  if (!drawing) {
+    const customCursor = document.getElementById('custom-cursor');
+    if (customCursor) customCursor.style.display = 'none';
+    const guides = document.getElementById('drawing-guides');
+    if (guides) guides.style.display = 'none';
+  }
 });
 
 // Update cursor position when scrolling (includes wheel, shift+wheel, and middle-click pan)
