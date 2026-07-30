@@ -110,6 +110,42 @@ function parseRgba(rgbaString) {
 
 /// --- NEW: Update custom cursor position and appearance based on current tool and stroke settings
 let lastMouseEvent = null;
+
+// Helper to extract screen-space coordinates from pointer/touch event
+function getEventScreenCoords(e) {
+  if (!e) return { x: 0, y: 0 };
+  let clientX = e.clientX;
+  let clientY = e.clientY;
+  if (clientX === undefined && e.touches && e.touches.length > 0) {
+    clientX = e.touches[0].clientX;
+    clientY = e.touches[0].clientY;
+  } else if (clientX === undefined && e.changedTouches && e.changedTouches.length > 0) {
+    clientX = e.changedTouches[0].clientX;
+    clientY = e.changedTouches[0].clientY;
+  }
+  return { x: clientX || 0, y: clientY || 0 };
+}
+
+// Helper to calculate exact custom cursor position in screen-space, considering snapping
+function getCustomCursorScreenCoords() {
+  if (!lastMouseEvent) return null;
+  const coords = getEventScreenCoords(lastMouseEvent);
+  
+  if (drawing && currentPath && straightLineState && (lastMouseEvent.ctrlKey || lastMouseEvent.metaKey)) {
+    const anchorX = straightLineState.lastX ?? straightLineState.startX;
+    const anchorY = straightLineState.lastY ?? straightLineState.startY;
+    const pt = getBoardPointFromEvent(lastMouseEvent);
+    const snapped = snapToAngle(anchorX, anchorY, pt.x, pt.y, 15);
+    const boardRect = board.getBoundingClientRect();
+    return {
+      x: snapped.x * state.scale + boardRect.left,
+      y: snapped.y * state.scale + boardRect.top
+    };
+  }
+  
+  return coords;
+}
+
 window.addEventListener('pointermove', e => {
   lastMouseEvent = e;
 
@@ -134,13 +170,13 @@ window.addEventListener('pointermove', e => {
     }
   }
 
-  const pt = getBoardPointFromEvent(e);
+  const screenCoords = getCustomCursorScreenCoords();
   const guides = document.getElementById('drawing-guides');
-  if (guideH && guideV && guides && guides.style.display !== 'none') {
-    guideH.setAttribute('y1', pt.y);
-    guideH.setAttribute('y2', pt.y);
-    guideV.setAttribute('x1', pt.x);
-    guideV.setAttribute('x2', pt.x);
+  if (guideH && guideV && guides && guides.style.display !== 'none' && screenCoords) {
+    guideH.setAttribute('y1', screenCoords.y);
+    guideH.setAttribute('y2', screenCoords.y);
+    guideV.setAttribute('x1', screenCoords.x);
+    guideV.setAttribute('x2', screenCoords.x);
   }
 });
 
@@ -902,17 +938,15 @@ function setTool(t){
   const brushRadius = state.stroke.width / 2;
   const color = state.stroke.color || '#000';
 
-  // 1. Update the brush size circle
-  brushCircle.setAttribute('r', Math.max(0.5, brushRadius));
+  // 1. Update the brush size circle - scale with zoom level to represent actual brush size on the screen
+  brushCircle.setAttribute('r', Math.max(0.5, brushRadius * state.scale));
   brushCircle.setAttribute('fill', color);
   brushCircle.style.opacity = 0.5;
 
-  // 2. Counter-scale the fixed-size group
-  const inverseScale = 1 / state.scale;
-  fixedGroup.setAttribute('transform', `scale(${inverseScale})`);
+  // 2. Clear scale transform on the fixed-size group as it is in screen space and doesn't need scaling
+  fixedGroup.removeAttribute('transform');
   
   // 3. Update cursor position based on last mouse position
-  // On touch devices, always show the cursor since there's no native pointer
   updateCustomCursorPosition();
 }
 
@@ -921,21 +955,23 @@ function updateCustomCursorPosition() {
   const customCursor = document.getElementById('custom-cursor');
   if (!customCursor || isPanning) return;
   
-  const pt = getBoardPointFromEvent(lastMouseEvent);
-  customCursor.setAttribute('transform', `translate(${pt.x}, ${pt.y})`);
+  const screenCoords = getCustomCursorScreenCoords();
+  if (screenCoords) {
+    customCursor.setAttribute('transform', `translate(${screenCoords.x}, ${screenCoords.y})`);
+  }
 }
 
 function updateGuidelinesAndCursor() {
   if (!lastMouseEvent) return;
   
-  const pt = getBoardPointFromEvent(lastMouseEvent);
-  
-  // Update guides
-  if (guideH && guideV) {
-    guideH.setAttribute('y1', pt.y);
-    guideH.setAttribute('y2', pt.y);
-    guideV.setAttribute('x1', pt.x);
-    guideV.setAttribute('x2', pt.x);
+  const screenCoords = getCustomCursorScreenCoords();
+  if (screenCoords) {
+    if (guideH && guideV) {
+      guideH.setAttribute('y1', screenCoords.y);
+      guideH.setAttribute('y2', screenCoords.y);
+      guideV.setAttribute('x1', screenCoords.x);
+      guideV.setAttribute('x2', screenCoords.x);
+    }
   }
   
   // Update custom cursor
