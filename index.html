@@ -310,7 +310,7 @@
     border-radius:6px;
     word-wrap: break-word;
     overflow-wrap: break-word;
-    white-space: pre;
+    white-space: pre-wrap;
     overflow: hidden;
     box-sizing: border-box;
     width: 100%;
@@ -1466,7 +1466,9 @@ let state = {
     bgAlpha: 0.0,
     align: 'center',
     fontFamily: 'inherit'
-  }
+  },
+  clipboard: null,
+  clipboardFresh: false
 };
 
 // --- NEW: Stroke drawing state ---
@@ -2286,27 +2288,34 @@ function createTextItem(text='', x=100, y=100, options = {}){
   wrapper.style.zIndex = state.nextZ++; // --- MODIFIED: Use unified Z ---
   wrapper.style.minWidth = '80px';
   wrapper.style.minHeight = '28px';
+  if (typeof options.width === 'number') wrapper.style.width = options.width + 'px';
+  if (typeof options.height === 'number') wrapper.style.height = options.height + 'px';
 
   const p = document.createElement('div');
   p.className = 'text-item';
   p.contentEditable = 'true';
-  p.innerText = text || 'Type...';
+  p.textContent = text || 'Type...';
   p.spellcheck = false;
   
-  p.style.fontWeight = state.text.bold ? 'bold' : 'normal';
-  p.style.fontStyle = state.text.italic ? 'italic' : 'normal';
+  const textStyle = options.style || {};
+  p.style.fontWeight = textStyle.bold ? 'bold' : (state.text.bold ? 'bold' : 'normal');
+  p.style.fontStyle = textStyle.italic ? 'italic' : (state.text.italic ? 'italic' : 'normal');
   const td = [];
-  if(state.text.underline) td.push('underline');
-  if(state.text.crossed) td.push('line-through');
+  if(textStyle.underline || state.text.underline) td.push('underline');
+  if(textStyle.crossed || state.text.crossed) td.push('line-through');
   p.style.textDecoration = td.length ? td.join(' ') : 'none';
-  p.style.textAlign = state.text.align;
-  p.style.fontSize = (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize || '16px');
-  p.style.fontFamily = state.text.fontFamily || 'inherit';
+  p.style.textAlign = textStyle.textAlign || state.text.align;
+  p.style.fontSize = (typeof textStyle.fontSize === 'number' ? textStyle.fontSize + 'px' : textStyle.fontSize) || (typeof state.text.fontSize === 'number' ? state.text.fontSize + 'px' : state.text.fontSize || '16px');
+  p.style.fontFamily = textStyle.fontFamily || state.text.fontFamily || 'inherit';
   // Store fontFamily in data attribute for reliable retrieval
-  wrapper.dataset.fontFamily = state.text.fontFamily || 'inherit';
-  p.style.color = state.text.color;
-const rgb = hexToRgbCached(state.text.bgColor);
-  p.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
+  wrapper.dataset.fontFamily = textStyle.fontFamily || state.text.fontFamily || 'inherit';
+  p.style.color = textStyle.color || state.text.color;
+  if (textStyle.backgroundColor) {
+    p.style.backgroundColor = textStyle.backgroundColor;
+  } else {
+    const rgb = hexToRgbCached(state.text.bgColor);
+    p.style.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${state.text.bgAlpha})`;
+  }
   
   wrapper.appendChild(p);
   
@@ -2932,24 +2941,17 @@ function makePathSelectable(path){
       }
     }
     
-    // If the parent stroke-wrapper is already selected, prefer to drag the wrapper
-    const wrapper = path.closest('.stroke-wrapper');
-    if (wrapper && state.selectedIds.has(wrapper.dataset.id)) {
-      ev.stopPropagation();
-      if (state.tool === 'select' || (state.tool === 'draw' && isAlreadySelected)) {
-        const g = wrapper.querySelector('g');
-        if (g) startDragSvg(g, ev);
-      }
-      return;
-    }
     ev.stopPropagation();
     const addToSelection = ev.shiftKey;
+    
+    // Handle selection: allow selecting individual paths independently
     if (isAlreadySelected && addToSelection) {
       state.selectedIds.delete(pid);
       path.classList.remove('selected');
       refreshLayers();
       return;
     }
+    
     if (!isAlreadySelected) {
       if (!addToSelection) clearSelection();
       state.selectedIds.add(pid);
@@ -2999,13 +3001,12 @@ function startDragHtml(node, e){
         processedNodes.add(g);
       }
     } else if (n.dataset.type === 'stroke') {
-      // individual path selected - get its parent g element
-      const g = n.closest('g');
-      if (g && !processedNodes.has(g)) {
-        const orig = g.getAttribute('transform') || '';
+      // Individual path selected - drag it directly, not its parent group
+      if (!processedNodes.has(n)) {
+        const orig = n.getAttribute('transform') || '';
         const parsed = parseTransform(orig);
-        dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
-        processedNodes.add(g);
+        dragState.items.push({ node: n, type: 'svg-path', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        processedNodes.add(n);
       }
     } else {
       if (!processedNodes.has(n)) {
@@ -3616,8 +3617,16 @@ function onBoardPointerMove(e) {
     const x = pt.x, y = pt.y;
 
     if (straightLineState) {
-      const anchorX = straightLineState.lastX ?? straightLineState.startX;
-      const anchorY = straightLineState.lastY ?? straightLineState.startY;
+      // Determine anchor for snapping: use last point in array if it exists, otherwise use lastX/lastY
+      let anchorX, anchorY;
+      if (straightLineState.points && straightLineState.points.length > 0) {
+        const lastPt = straightLineState.points[straightLineState.points.length - 1];
+        anchorX = lastPt.x;
+        anchorY = lastPt.y;
+      } else {
+        anchorX = straightLineState.lastX ?? straightLineState.startX;
+        anchorY = straightLineState.lastY ?? straightLineState.startY;
+      }
 
       // --- UPDATED GUIDING LINES LOGIC (Follow Mouse) ---
       if (guides && guideH && guideV) {
@@ -3817,8 +3826,16 @@ function onBoardPointerUp(e){
     try { board.releasePointerCapture?.(e.pointerId); } catch(err) {}
     
     if (straightLineState) {
-      const anchorX = straightLineState.lastX ?? straightLineState.startX;
-      const anchorY = straightLineState.lastY ?? straightLineState.startY;
+      // Determine anchor for snapping: use last point in array if it exists, otherwise use lastX/lastY
+      let anchorX, anchorY;
+      if (straightLineState.points && straightLineState.points.length > 0) {
+        const lastPt = straightLineState.points[straightLineState.points.length - 1];
+        anchorX = lastPt.x;
+        anchorY = lastPt.y;
+      } else {
+        anchorX = straightLineState.lastX ?? straightLineState.startX;
+        anchorY = straightLineState.lastY ?? straightLineState.startY;
+      }
       let finalX = x, finalY = y;
       
       if (e.ctrlKey || e.metaKey) {
@@ -4053,7 +4070,24 @@ window.addEventListener('paste', (ev)=>{
           y = centerY - 20;
         }
 
-        createTextItem(str, x, y, { skipFocus: true });
+        if (state.clipboard && state.clipboardFresh && state.clipboard.items?.length) {
+          const pastedItems = state.clipboard.items;
+          let offset = 0;
+          pastedItems.forEach(it => {
+            if (it.type === 'text') {
+              createTextItem(it.text, x + offset, y + offset, {
+                skipFocus: true,
+                width: it.width,
+                height: it.height,
+                style: it.style
+              });
+              offset += 20;
+            }
+          });
+          state.clipboardFresh = false;
+        } else {
+          createTextItem(str, x, y, { skipFocus: true });
+        }
       });
       ev.preventDefault();
       return;
@@ -6184,18 +6218,38 @@ async function copySelected() {
       }
     }
 
-    // Handle text items - copy text content only
-    const textParts = [];
+    // Handle text items - copy text content and style/size for internal paste
+    const textItems = [];
     selectedItems.forEach(node => {
       if (node.dataset.type === 'text') {
         const textEl = node.querySelector('.text-item');
-        if (textEl) textParts.push(textEl.innerText);
+        if (textEl) {
+          textItems.push({
+            type: 'text',
+            text: textEl.innerText,
+            width: parseFloat(node.style.width) || node.offsetWidth || 80,
+            height: parseFloat(node.style.height) || node.offsetHeight || 28,
+            style: {
+              fontSize: textEl.style.fontSize || null,
+              bold: textEl.style.fontWeight === 'bold',
+              italic: textEl.style.fontStyle === 'italic',
+              underline: textEl.style.textDecoration.includes('underline'),
+              crossed: textEl.style.textDecoration.includes('line-through'),
+              color: textEl.style.color || null,
+              backgroundColor: textEl.style.backgroundColor || null,
+              textAlign: textEl.style.textAlign || 'left',
+              fontFamily: textEl.style.fontFamily || 'inherit'
+            }
+          });
+        }
       }
     });
 
-    if (textParts.length > 0) {
-      await navigator.clipboard.writeText(textParts.join('\n'));
-      showCopyFeedback(textParts.length > 1 ? 'Text items copied to clipboard' : 'Text copied to clipboard');
+    if (textItems.length > 0) {
+      state.clipboard = { items: textItems };
+      state.clipboardFresh = true;
+      await navigator.clipboard.writeText(textItems.map(item => item.text).join('\n'));
+      showCopyFeedback(textItems.length > 1 ? 'Text items copied to clipboard' : 'Text copied to clipboard');
       return;
     }
 
