@@ -1348,11 +1348,6 @@ function getPressure(e) {
   return e.pressure !== undefined ? e.pressure : (e.pointerType === 'pen' ? 0.5 : 0);
 }
 
-// Get pressure value from pointer event (useful for pen input)
-function getPressure(e) {
-  return e.pressure !== undefined ? e.pressure : (e.pointerType === 'pen' ? 0.5 : 0);
-}
-
 // Utility: Check if device is mobile/tablet
 function isMobileDevice() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -1566,6 +1561,9 @@ function finalizeStrokeGroup() {
     }
 
     if (currentStrokeGroup) {
+        // Remove temporary preview strokes created during multi-segment straight-line drawing
+        currentStrokeGroup.querySelectorAll('path[data-is-preview="true"]').forEach(p => p.remove());
+
         // Only transform if circle transform is enabled in state
         if (state.stroke.circleTransform) {
             // Keep your existing transformation logic here
@@ -1653,6 +1651,7 @@ function createSnapshot() {
     const wrapperId = svgWrapper.dataset.id; // Track which wrapper these strokes belong to
 
     g.querySelectorAll('.stroke').forEach(p => {
+      if (p.dataset.isPreview === 'true') return;
       const pathId = p.dataset.id;
       const strokeColor = p.getAttribute('stroke');
       const hasStartArrow = !!p.getAttribute('marker-start');
@@ -1670,6 +1669,7 @@ function createSnapshot() {
         hasEndArrow,
         arrowSize,
         transform: g.getAttribute('transform') || '',
+        pathTransform: p.getAttribute('transform') || '',
         // FIX: Keep track of positions in history
         left: left,
         top: top,
@@ -1710,7 +1710,7 @@ function restoreSnapshot(snapshot) {
   // -------------------------------------------------------------------------------------------------------
 
   // Clear existing items (including previously imported ones)
-  const existingItems = board.querySelectorAll('.item, .stroke-wrapper');
+  const existingItems = board.querySelectorAll('.item, .stroke-wrapper, .stroke, .stroke-hit');
   existingItems.forEach(n => {
     try { n.remove(); } catch(e) { console.warn('Failed to remove item:', e); }
   });
@@ -1848,6 +1848,7 @@ function restoreSnapshot(snapshot) {
       path.dataset.type = 'stroke';
       if (it.straightLine) path.dataset.straightLine = 'true';
       path.setAttribute('d', it.d || '');
+      if (it.pathTransform) path.setAttribute('transform', it.pathTransform);
       path.setAttribute('stroke', it.stroke || '#000');
       path.setAttribute('stroke-width', it.width || 2);
       path.dataset.arrowSize = it.arrowSize || 6;
@@ -1892,6 +1893,8 @@ function snapshotItemsEqual(items1, items2) {
     if (a.width !== b.width || a.height !== b.height) return false;
     if (a.d !== b.d || a.stroke !== b.stroke) return false;
     if (a.text !== b.text || a.transform !== b.transform) return false;
+    // consider per-path transform differences
+    if ((a.pathTransform || '') !== (b.pathTransform || '')) return false;
     
     // Ensure arrow states and straight-line metadata are tracked
     if (!!a.hasStartArrow !== !!b.hasStartArrow) return false;
@@ -2379,6 +2382,11 @@ function startStroke(x, y, pointerEvent = null) {
   path.dataset.type = 'stroke';
   path.dataset.id = id('stroke');
   
+  // Mark temporary straight-line preview strokes so they are ignored in history and undo.
+  if (pointerEvent && pointerEvent.shiftKey && !pointerEvent.altKey) {
+    path.dataset.isPreview = 'true';
+  }
+
   // FIXED: Added "L x y" to create an immediate visible dot on click
   const xf = x.toFixed(1);
   const yf = y.toFixed(1);
@@ -2392,7 +2400,7 @@ function startStroke(x, y, pointerEvent = null) {
   path.setAttribute('stroke-linejoin', 'round');
 
   currentStrokeGroup.appendChild(path);
-  makePathSelectable(path);
+  if (path.dataset.isPreview !== 'true') makePathSelectable(path);
   return path;
 }
 
@@ -2468,6 +2476,8 @@ function addPointToPath(path, x, y, pointerEvent = null) {
   
   // Update stroke width based on pressure
   path.setAttribute('stroke-width', effectiveWidth);
+  // Keep hit path in sync so hit-testing follows live strokes
+  try{ if(path._hitPath) path._hitPath.setAttribute('d', path.getAttribute('d')); }catch(e){}
 }
 
 // Snap a point (mx,my) relative to anchor (sx,sy) to the nearest angle step (degrees)
@@ -2888,6 +2898,7 @@ function makeSvgSelectable(gElement){
 // Make an individual SVG <path> selectable, allowing it to be selected and dragged independently of its parent group. This is used for strokes that are not part of a group or for individual paths within a group.
 function makePathSelectable(path){
   if (!path) return;
+  if (path.dataset.isPreview === 'true') return;
   // Create an invisible wider 'hit' path behind the real stroke so thin strokes are easier to grab.
   // This hit path will be updated alongside the visible path's 'd'.
   const svgParent = path.ownerSVGElement || svg;
@@ -2899,6 +2910,9 @@ function makePathSelectable(path){
   const hitMargin = 20; // pixels extra tolerance
   hit.setAttribute('stroke-width', Math.max(visibleWidth + hitMargin, 8));
   hit.setAttribute('d', path.getAttribute('d') || '');
+  // Mirror transform so hit area follows visual path
+  const pTransform = path.getAttribute('transform');
+  if (pTransform) hit.setAttribute('transform', pTransform);
   // Insert hit path before the visible path so it does not occlude markers
   path.parentNode.insertBefore(hit, path);
   // Reference on the visible path so we can update it when drawing
@@ -3000,6 +3014,7 @@ function startDragHtml(node, e){
       }
     }
   });
+  dragState.stateBeforeMove = createSnapshot();
   board.setPointerCapture(e.pointerId);
 }
 
@@ -3022,7 +3037,9 @@ function startDragSvg(element, e){
     if (n.dataset.type === 'stroke-group' || n.dataset.type === 'stroke-wrapper') {
       gElement = n.querySelector('g');
     } else if (n.dataset.type === 'stroke') {
-      gElement = n.closest('g');
+      // If a single stroke path is selected, allow dragging the path itself
+      // so that individual straight segments can be moved independently.
+      gElement = n; // use the path element directly
     } else {
       // For HTML items, check if already processed (shouldn't happen but be safe)
       if (!processedNodes.has(n)) {
@@ -3037,11 +3054,14 @@ function startDragSvg(element, e){
       if (!processedNodes.has(gElement)) {
         const orig = gElement.getAttribute('transform') || '';
         const parsed = parseTransform(orig);
-        dragState.items.push({ node: gElement, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        // If gElement is a <path> (an individual stroke), mark it as 'svg-path'
+        const itemType = (gElement.tagName && gElement.tagName.toLowerCase() === 'path') ? 'svg-path' : 'svg';
+        dragState.items.push({ node: gElement, type: itemType, originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
         processedNodes.add(gElement);
       }
     }
   });
+  dragState.stateBeforeMove = createSnapshot();
   board.setPointerCapture(e.pointerId);
 }
 
@@ -3066,6 +3086,17 @@ function onPointerMove(e){
       const rest = (item.transformRest || '').trim();
       const t = rest ? `${rest} translate(${newTx},${newTy})` : `translate(${newTx},${newTy})`;
       item.node.setAttribute('transform', t);
+    } else if (item.type === 'svg-path') {
+      // Translate individual SVG <path> elements
+      const baseTx = parseFloat(item.baseTx) || 0;
+      const baseTy = parseFloat(item.baseTy) || 0;
+      const newTx = baseTx + dx;
+      const newTy = baseTy + dy;
+      const rest = (item.transformRest || '').trim();
+      const t = rest ? `${rest} translate(${newTx},${newTy})` : `translate(${newTx},${newTy})`;
+      item.node.setAttribute('transform', t);
+      // Also move hit path if present
+      try{ if(item.node._hitPath) item.node._hitPath.setAttribute('transform', t); }catch(e){}
     }
   });
   if (dragState.type === 'html') {
@@ -3110,6 +3141,25 @@ function onPointerUp(e) {
         if (defs) wrapper.appendChild(defs.cloneNode(true)); // keep defs with stroke group
       }
     } 
+    else if (item.type === 'svg-path') {
+      const element = item.node;
+      const baseTx = parseFloat(item.baseTx) || 0;
+      const baseTy = parseFloat(item.baseTy) || 0;
+      const finalTx = baseTx + dx;
+      const finalTy = baseTy + dy;
+      const rest = (item.transformRest || '').trim();
+      const newTransform = rest ? `${rest} translate(${finalTx},${finalTy})` : `translate(${finalTx},${finalTy})`;
+      element.setAttribute('transform', newTransform);
+
+      // Keep defs with the stroke-wrapper (if any)
+      const wrapper = element.closest('.stroke-wrapper');
+      if (wrapper) {
+        const defs = wrapper.querySelector('defs');
+        if (defs) wrapper.appendChild(defs.cloneNode(true));
+      }
+      // Also update hit path transform so selection remains aligned
+      try{ if (element._hitPath) element._hitPath.setAttribute('transform', newTransform); }catch(e){}
+    }
     else if (item.type === 'html') {
       // ✅ HTML items (like text boxes)
       item.node.style.left = (item.origLeft + dx) + 'px';
@@ -3120,16 +3170,17 @@ function onPointerUp(e) {
   try { board.releasePointerCapture?.(e.pointerId); } catch(e) {}
   
   const currentState = dragState; // Save reference before nulling
+  const moveSnapshot = dragState.stateBeforeMove || stateBeforeMove;
   dragState = null;
 
   refreshLayers();
 
   // ✅ MODIFICATION: Only push history if the item was actually moved
   // Compare state before and after to ensure the move actually changed something
-  if (hasMoved && stateBeforeMove) {
+  if (hasMoved && moveSnapshot) {
     const stateAfterMove = createSnapshot();
     // Only record in history if the state actually changed
-    if (!snapshotItemsEqual(stateBeforeMove.items, stateAfterMove.items)) {
+    if (!snapshotItemsEqual(moveSnapshot.items, stateAfterMove.items)) {
       // BUGFIX: Push the state AFTER the move, not before
       undoStack.push(stateAfterMove);
       if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
@@ -3775,29 +3826,127 @@ function onBoardPointerUp(e){
         finalX = snapped.x; finalY = snapped.y;
       }
       
-      // Track points if not already done
+      // Ensure points array exists
       if (!straightLineState.points) {
-        straightLineState.points = [
-          { x: straightLineState.startX, y: straightLineState.startY }
-        ];
+        straightLineState.points = [ { x: straightLineState.startX, y: straightLineState.startY } ];
       }
-      
-      // Add the new point only if it's different from the last point
-      const lastPt = straightLineState.points[straightLineState.points.length - 1];
-      if (!lastPt || lastPt.x !== finalX || lastPt.y !== finalY) {
-        straightLineState.points.push({ x: finalX, y: finalY });
-      }
-      
-      // Build final path using clean helper function with correct rounding setting
-      const d = buildPolylinePath(straightLineState.points, state.stroke.rounded, 1.5);
-      currentPath.setAttribute('d', d);
 
+      // Add the new point only if it's different from the last point
+      const prevPt = straightLineState.points[straightLineState.points.length - 1];
+      if (!prevPt || prevPt.x !== finalX || prevPt.y !== finalY) {
+        straightLineState.points.push({ x: finalX, y: finalY });
+
+        // Create a separate permanent path for this single straight segment
+        const sx = prevPt ? prevPt.x : straightLineState.startX;
+        const sy = prevPt ? prevPt.y : straightLineState.startY;
+        const segD = `M ${sx} ${sy} L ${finalX} ${finalY}`;
+
+        if (currentStrokeGroup) {
+          const markerId = `arrow-${currentStrokeGroup.dataset.id}`;
+          const hasMarkerDefs = !!currentStrokeGroup.querySelector('defs');
+          if ((state.stroke.startArrow || state.stroke.endArrow) && !hasMarkerDefs) {
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            const arrowSize = state.stroke.arrowSize;
+            marker.id = markerId;
+            marker.setAttribute('markerWidth', arrowSize);
+            marker.setAttribute('markerHeight', arrowSize);
+            marker.setAttribute('refX', arrowSize);
+            marker.setAttribute('refY', arrowSize / 2);
+            marker.setAttribute('markerUnits', 'strokeWidth');
+            marker.setAttribute('orient', 'auto-start-reverse');
+            marker.setAttribute('viewBox', `0 0 ${arrowSize * 1.5} ${arrowSize}`);
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', `0,0 ${arrowSize * 1.2},${arrowSize / 2} 0,${arrowSize}`);
+            polygon.setAttribute('fill', state.stroke.color);
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+            currentStrokeGroup.appendChild(defs);
+          }
+
+          if (state.stroke.rounded) {
+            currentPath.dataset.straightLine = 'true';
+            currentPath.removeAttribute('data-is-preview');
+            currentPath.setAttribute('d', buildPolylinePath(straightLineState.points, true, 1.5));
+            if (state.stroke.startArrow && !currentPath.getAttribute('marker-start')) {
+              currentPath.setAttribute('marker-start', `url(#${markerId})`);
+              currentPath.dataset.arrowSize = state.stroke.arrowSize;
+            }
+            if (state.stroke.endArrow) {
+              currentPath.setAttribute('marker-end', `url(#${markerId})`);
+              currentPath.dataset.arrowSize = state.stroke.arrowSize;
+            }
+            makePathSelectable(currentPath);
+            if (!straightLineState) straightLineState = {};
+            straightLineState._skipNextPush = true;
+            pushHistory();
+          } else {
+            const segPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            segPath.classList.add('stroke');
+            segPath.dataset.type = 'stroke';
+            segPath.dataset.id = id('stroke');
+            segPath.dataset.straightLine = 'true';
+            segPath.setAttribute('d', segD);
+            segPath.setAttribute('stroke', state.stroke.color);
+            segPath.setAttribute('stroke-width', state.stroke.width);
+            segPath.setAttribute('stroke-linecap', 'round');
+            segPath.setAttribute('stroke-linejoin', 'round');
+
+            const permanentPaths = currentStrokeGroup.querySelectorAll('path.stroke:not([data-is-preview="true"])');
+            if (state.stroke.startArrow && permanentPaths.length === 0) {
+              segPath.setAttribute('marker-start', `url(#${markerId})`);
+              segPath.dataset.arrowSize = state.stroke.arrowSize;
+            }
+            if (state.stroke.endArrow) {
+              currentStrokeGroup.querySelectorAll('path.stroke').forEach(p => p.removeAttribute('marker-end'));
+              segPath.setAttribute('marker-end', `url(#${markerId})`);
+              segPath.dataset.arrowSize = state.stroke.arrowSize;
+            }
+
+            currentStrokeGroup.appendChild(segPath);
+            makePathSelectable(segPath);
+            if (!straightLineState) straightLineState = {};
+            straightLineState._skipNextPush = true;
+            pushHistory();
+            if (currentPath) {
+              currentPath.removeAttribute('marker-start');
+              currentPath.removeAttribute('marker-end');
+            }
+          }
+        }
+
+        // Update the preview temporary path to the new anchor (a visible "dot") for the next segment
+        if (currentPath && !state.stroke.rounded) {
+          currentPath.setAttribute('d', `M ${finalX} ${finalY} L ${finalX} ${finalY}`);
+        }
+      }
+
+      // Finalize rounded paths even if the release point didn't add a new segment.
+      if (!isNewPoint && state.stroke.rounded && currentStrokeGroup && currentPath) {
+        const markerId = `arrow-${currentStrokeGroup.dataset.id}`;
+        currentPath.dataset.straightLine = 'true';
+        currentPath.removeAttribute('data-is-preview');
+        currentPath.setAttribute('d', buildPolylinePath(straightLineState.points, true, 1.5));
+        if (state.stroke.startArrow && !currentPath.getAttribute('marker-start')) {
+          currentPath.setAttribute('marker-start', `url(#${markerId})`);
+          currentPath.dataset.arrowSize = state.stroke.arrowSize;
+        }
+        if (state.stroke.endArrow) {
+          currentPath.setAttribute('marker-end', `url(#${markerId})`);
+          currentPath.dataset.arrowSize = state.stroke.arrowSize;
+        }
+        makePathSelectable(currentPath);
+        if (!straightLineState) straightLineState = {};
+        straightLineState._skipNextPush = true;
+        pushHistory();
+      }
+
+      // If single-line mode, finish the group. Otherwise keep straight-line state active for more segments.
       if (straightLineState.isSingle) {
         finalizeStrokeGroup();
         currentPath = null;
       } else if (e.shiftKey) {
         straightLineState.isPending = false;
-        straightLineState.basePath = d;
         straightLineState.lastX = finalX;
         straightLineState.lastY = finalY;
       } else {
@@ -3812,7 +3961,11 @@ function onBoardPointerUp(e){
   }
 
   if (didDrawOrLasso && !isRestoringHistory) {
-    pushHistory();
+    // If a straight-line segment already pushed history above, skip the generic push
+    if (!(straightLineState && straightLineState._skipNextPush)) {
+      pushHistory();
+    }
+    if (straightLineState) straightLineState._skipNextPush = false;
   }
   
   onPointerUp(e); 
@@ -4135,7 +4288,8 @@ async function exportWhiteboard(){
         d: d, 
         markerStart: p.getAttribute('marker-start'), 
         markerEnd: p.getAttribute('marker-end'),
-        straightLine: p.dataset.straightLine === 'true' // <-- INTEGRATED HERE
+        straightLine: p.dataset.straightLine === 'true', // <-- INTEGRATED HERE
+        transform: p.getAttribute('transform') || ''
       });
       g_color = p.getAttribute('stroke') || g_color;
       g_width = p.getAttribute('stroke-width') || g_width;
@@ -4308,6 +4462,7 @@ async function importWhiteboard(file) {
           path.dataset.type = 'stroke';
           path.dataset.id = id('stroke');
           path.setAttribute('d', p.d);
+          if (p.transform) path.setAttribute('transform', p.transform);
           path.setAttribute('stroke', it.color);
           path.setAttribute('stroke-width', it.width);
           
@@ -6180,15 +6335,6 @@ window.addEventListener('keyup', (e) => {
         }
     }
 });
-
-// Debounce function to limit how often a function can run during rapid events (like scroll or zoom)
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
-}
 
 // Use debounce for scroll and zoom events to prevent excessive updates
 setTool('select');
