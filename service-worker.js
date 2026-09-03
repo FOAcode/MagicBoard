@@ -14,7 +14,12 @@ const FILES_TO_CACHE = [
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(FILES_TO_CACHE))
+            .then(cache => Promise.all(FILES_TO_CACHE.map(file =>
+                fetch(file, { cache: 'no-store' }).then(response => {
+                    if (!response.ok) throw new Error(`Could not cache ${file}`);
+                    return cache.put(file, response);
+                })
+            )))
     );
     self.skipWaiting();
 });
