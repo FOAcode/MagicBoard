@@ -1,6 +1,6 @@
-// Service Worker Script: stale-while-revalidate
+// Service Worker Script: cache-first with a daily update check
 
-const CACHE_NAME = 'MagicBoard_cache_v5';
+const CACHE_NAME = 'MagicBoard_cache';
 const FILES_TO_CACHE = [
     './',
     './index.html',
@@ -31,20 +31,41 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Fetch: stale-while-revalidate
+async function updateCachedFiles() {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(FILES_TO_CACHE.map(async file => {
+        try {
+            const response = await fetch(file, { cache: 'no-store' });
+            if (response.ok && response.type === 'basic') {
+                await cache.put(file, response);
+            }
+        } catch (error) {
+            // Keep the existing cache when the network is unavailable.
+        }
+    }));
+}
+
+self.addEventListener('message', event => {
+    if (event.data?.type === 'CHECK_FOR_UPDATE') {
+        event.waitUntil(updateCachedFiles());
+    }
+});
+
+// Fetch: use cached files first and populate the cache on a miss.
 self.addEventListener('fetch', event => {
+    if (event.request.method !== 'GET') return;
+
     event.respondWith(
         caches.match(event.request).then(cachedResponse => {
-            const fetchPromise = fetch(event.request)
-                .then(networkResponse => {
-                    if (networkResponse.status === 200 && networkResponse.type === 'basic') {
-                        const clone = networkResponse.clone();
-                        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-                    }
-                    return networkResponse;
-                }).catch(() => null); // fail silently on fetch error
+            if (cachedResponse) return cachedResponse;
 
-            return cachedResponse || fetchPromise;
+            return fetch(event.request).then(networkResponse => {
+                if (networkResponse.ok && networkResponse.type === 'basic') {
+                    const clone = networkResponse.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+                }
+                return networkResponse;
+            });
         })
     );
 });

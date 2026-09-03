@@ -2,9 +2,21 @@
   "name": "MagicBoard",
   "short_name": "MagicBoard",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "display_override": ["window-controls-overlay"],
   "background_color": "#f6f7fb",
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "application/x-magicboard": [".wb"]
+      }
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
   
   "icons": [
     {

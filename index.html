@@ -2336,11 +2336,7 @@ function createTextItem(text='', x=100, y=100, options = {}){
   p.addEventListener('input', () => {
     const wrapper = p.closest('.item');
     if (wrapper) {
-      const currentWidth = wrapper.offsetWidth;
-      const newWidth = Math.max(currentWidth, p.scrollWidth, 80);
-      const newHeight = Math.max(28, p.scrollHeight);
-      wrapper.style.width = newWidth + 'px';
-      wrapper.style.height = newHeight + 'px';
+      resizeTextItemToContent(wrapper, p);
     }
   });
   
@@ -2361,6 +2357,31 @@ function createTextItem(text='', x=100, y=100, options = {}){
   // --- END MODIFICATION ---
   if (!options.skipHistory) pushHistory();
   return wrapper;
+}
+
+function resizeTextItemToContent(wrapper, textDiv) {
+  const measurement = textDiv.cloneNode(true);
+  measurement.contentEditable = 'false';
+  measurement.textContent = textDiv.innerText;
+  measurement.style.position = 'fixed';
+  measurement.style.left = '-10000px';
+  measurement.style.top = '0';
+  measurement.style.width = 'max-content';
+  measurement.style.height = 'auto';
+  measurement.style.maxWidth = 'none';
+  measurement.style.whiteSpace = 'pre';
+  measurement.style.overflow = 'visible';
+  document.body.appendChild(measurement);
+
+  const measuredRect = measurement.getBoundingClientRect();
+  const contentWidth = measuredRect.width;
+  const contentHeight = measuredRect.height;
+  measurement.remove();
+  const currentWidth = parseFloat(wrapper.style.width) || wrapper.offsetWidth || 80;
+
+  const widthWithBuffer = Math.ceil(contentWidth) + 4;
+  wrapper.style.width = Math.max(80, currentWidth, widthWithBuffer) + 'px';
+  wrapper.style.height = Math.max(28, contentHeight) + 'px';
 }
 
 /* SVG Stroke creation */
@@ -3850,7 +3871,8 @@ function onBoardPointerUp(e){
 
       // Add the new point only if it's different from the last point
       const prevPt = straightLineState.points[straightLineState.points.length - 1];
-      if (!prevPt || prevPt.x !== finalX || prevPt.y !== finalY) {
+      const isNewPoint = !prevPt || prevPt.x !== finalX || prevPt.y !== finalY;
+      if (isNewPoint) {
         straightLineState.points.push({ x: finalX, y: finalY });
 
         // Create a separate permanent path for this single straight segment
@@ -4552,6 +4574,28 @@ async function importWhiteboard(file) {
     alert("Import failed: " + err.message);
   }
 }
+
+// Handle .wb files opened through the installed PWA file association.
+function registerFileHandler() {
+  if (!('launchQueue' in window)) return;
+
+  window.launchQueue.setConsumer(async (launchParams) => {
+    const fileEntry = launchParams.files?.[0];
+    if (!fileEntry) return;
+
+    try {
+      const file = await fileEntry.getFile();
+      if (file.name.toLowerCase().endsWith('.wb')) {
+        await importWhiteboard(file);
+      }
+    } catch (err) {
+      console.error('Could not open the MagicBoard file:', err);
+      alert('Could not open the MagicBoard file: ' + err.message);
+    }
+  });
+}
+
+registerFileHandler();
 
 /* Event wiring */
 board.addEventListener('pointerdown', (e) => {
@@ -5560,6 +5604,7 @@ if (roundedLinesInput) {
     state.stroke.rounded = e.target.checked;
     const quickRoundedBtn = el('#quick-rounded-lines');
     if (quickRoundedBtn) quickRoundedBtn.classList.toggle('active', e.target.checked);
+    if (state.stroke.rounded) convertActiveConnectedLineToRounded();
   });
   roundedLinesInput.checked = state.stroke.rounded;
 }
@@ -5571,6 +5616,7 @@ if (quickRoundedBtn) {
     state.stroke.rounded = !state.stroke.rounded;
     if (roundedLinesInput) roundedLinesInput.checked = state.stroke.rounded;
     quickRoundedBtn.classList.toggle('active', state.stroke.rounded);
+    if (state.stroke.rounded) convertActiveConnectedLineToRounded();
   });
 }
 
@@ -5666,6 +5712,39 @@ function applyCircleTransformToSelected() {
     });
     pushHistory();
 }
+
+  function convertActiveConnectedLineToRounded() {
+    if (!currentStrokeGroup || !currentPath || !straightLineState?.points || straightLineState.points.length < 3) {
+      return;
+    }
+
+    currentStrokeGroup.querySelectorAll('.stroke-hit').forEach(hit => hit.remove());
+    currentStrokeGroup.querySelectorAll('path.stroke').forEach(path => {
+      if (path !== currentPath) path.remove();
+    });
+
+    currentPath.dataset.straightLine = 'true';
+    currentPath.removeAttribute('data-is-preview');
+    currentPath.setAttribute('d', buildPolylinePath(straightLineState.points, true, 1.5));
+
+    const markerId = `arrow-${currentStrokeGroup.dataset.id}`;
+    const hasMarker = currentStrokeGroup.querySelector(`#${markerId}`);
+    if (state.stroke.startArrow && hasMarker) {
+      currentPath.setAttribute('marker-start', `url(#${markerId})`);
+      currentPath.dataset.arrowSize = state.stroke.arrowSize;
+    } else {
+      currentPath.removeAttribute('marker-start');
+    }
+    if (state.stroke.endArrow && hasMarker) {
+      currentPath.setAttribute('marker-end', `url(#${markerId})`);
+      currentPath.dataset.arrowSize = state.stroke.arrowSize;
+    } else {
+      currentPath.removeAttribute('marker-end');
+    }
+
+    makePathSelectable(currentPath);
+    pushHistory();
+  }
 
 /**
  * INTEGRATION: Improved Hook
@@ -6425,7 +6504,22 @@ document.addEventListener('keydown', (e) => {
 </script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js');
+    const updateCheckKey = 'magicboard-last-update-check';
+    const now = new Date();
+    const today = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+      .map(value => String(value).padStart(2, '0')).join('-');
+
+    navigator.serviceWorker.register('./service-worker.js').then(() => {
+      if (localStorage.getItem(updateCheckKey) === today) return;
+
+      return navigator.serviceWorker.ready.then(registration => {
+        if (!registration.active) return;
+        localStorage.setItem(updateCheckKey, today);
+        registration.active.postMessage({ type: 'CHECK_FOR_UPDATE' });
+      });
+    }).catch(() => {
+      // The app remains usable without service-worker support.
+    });
   }
 </script>
 </body>

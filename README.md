@@ -12,6 +12,8 @@ Visit [MagicBoard Live](https://foacode.github.io/MagicBoard) to start using it 
 2. Open `index.html` in any modern web browser
 3. Start creating!
 
+To open `.wb` files by double-clicking them, install MagicBoard from a Chromium-based browser using the browser's install-app option. The installed PWA registers `.wb` as a MagicBoard file type and can be selected as the Windows default application. File associations are not available when `index.html` is opened directly from disk.
+
 No build process, no dependencies to install—just open and draw.
 
 ---
@@ -79,6 +81,7 @@ No build process, no dependencies to install—just open and draw.
   - Import to resume work anytime
 - **PNG Export**: Copy board content as PNG image to clipboard
 - **Image Refit**: Automatically scale images to fit container
+- **Open `.wb` files with MagicBoard**: The installed PWA can be selected as the Windows default app for MagicBoard files
 
 ### ↩️ Undo/Redo System
 - **Robust History**: Up to 50 undo/redo steps
