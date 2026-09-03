@@ -11,7 +11,14 @@
       "action": "./index.html",
       "accept": {
         "application/x-magicboard": [".wb"]
-      }
+      },
+      "icons": [
+        {
+          "src": "icon.png",
+          "type": "image/png",
+          "sizes": "512x512"
+        }
+      ]
     }
   ],
   "launch_handler": {
