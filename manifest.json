@@ -1,6 +1,7 @@
 {
   "name": "MagicBoard",
   "short_name": "MagicBoard",
+  "id": "./",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -14,9 +15,10 @@
       },
       "icons": [
         {
-          "src": "icon.png",
+          "src": "./icon.png",
           "type": "image/png",
-          "sizes": "512x512"
+          "sizes": "1024x1024",
+          "purpose": "any"
         }
       ]
     }
@@ -27,9 +29,10 @@
   
   "icons": [
     {
-      "src": "icon.png",
+      "src": "./icon.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "1024x1024",
+      "purpose": "any"
     }
   ]
 }
