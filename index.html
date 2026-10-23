@@ -12,20 +12,148 @@
 <script src="libraries/html2canvas.min.js"></script>
 <style>
   :root{
-    --toolbar-h: 38px;
+    --toolbar-h: 44px;
     --accent:#2b6cb0;
     --bg:#f6f7fb;
   }
   html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;}
   body{display:flex;flex-direction:column;background:var(--bg);color:#111;}
   .toolbar{
-    height:var(--toolbar-h);
-    display:flex;align-items:center;gap:12px;
-    padding: 6px 16px;
+    position:relative;
+    z-index:3000;
+    min-height:var(--toolbar-h);
+    height:auto;
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    flex-shrink:0;
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto;
+    grid-template-areas:"tools center actions";
+    align-items:center;
+    justify-items:center;
+    gap:8px 12px;
+    padding: 2px 16px;
+    overflow:visible;
     background: linear-gradient(180deg, #fafbfc 0%, #f8f9fa 100%);
     border-bottom: 1px solid #e5e7eb;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
     box-sizing: border-box;
+  }
+  .toolbar > div:not(.toolbar-center):not(.spacer) {
+    flex-shrink: 0;
+  }
+  .toolbar-tools,
+  .toolbar-actions {
+    display:flex;
+    align-items:center;
+    flex:0 0 auto;
+    flex-wrap:nowrap;
+    align-items:center;
+    gap:12px;
+  }
+  .toolbar-tools {
+    grid-area:tools;
+  }
+  .toolbar-actions {
+    grid-area:actions;
+    gap:12px;
+  }
+  .toolbar-actions > .spacer {
+    display:none;
+  }
+  .toolbar-center{
+    grid-area:center;
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:0;
+    width:100%;
+    min-width:0;
+    min-height:var(--toolbar-settings-height, 0px);
+  }
+  .toolbar-center > div {
+    width:100%;
+    flex-wrap:wrap;
+    min-width:0;
+  }
+  .toolbar-center > #image-transparency,
+  .toolbar-center > #stroke-toolbar,
+  .toolbar-center > #text-toolbar {
+    justify-content:center;
+  }
+  #quick-text-styles {
+    margin-left:0 !important;
+  }
+  #stroke-toolbar {
+    align-content:center;
+    justify-content:center;
+  }
+  .stroke-settings-cluster {
+    display:flex;
+    flex:0 0 auto;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    width:max-content;
+    max-width:100%;
+  }
+  .stroke-width-control,
+  .stroke-quick-actions {
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    min-width:0;
+  }
+  .stroke-width-control {
+    flex:0 0 auto;
+    min-width:350px;
+    flex-wrap:nowrap;
+    gap:8px;
+  }
+  .stroke-quick-actions {
+    flex:0 0 auto;
+    min-width:230px;
+    flex-wrap:nowrap;
+    justify-content:center;
+    gap:6px;
+  }
+  #image-transparency,
+  #stroke-toolbar,
+  #text-toolbar {
+    box-sizing:border-box;
+    width:100%;
+  }
+  .stroke-quick-actions > #quick-stroke-colors,
+  .stroke-quick-actions > #quick-arrow-toggle,
+  .stroke-quick-actions > #quick-rounded-lines,
+  .stroke-quick-actions > #quick-circle-transform {
+    margin-left:0 !important;
+  }
+  @media (min-width: 1181px) {
+    .toolbar-center > #stroke-toolbar {
+      width:max-content;
+      max-width:100%;
+    }
+    .stroke-settings-cluster {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      width:max-content;
+      max-width:100%;
+    }
+    .stroke-settings-cluster > .stroke-width-control,
+    .stroke-settings-cluster > .stroke-quick-actions {
+      flex:0 0 auto;
+      width:max-content;
+    }
+  }
+  @media (min-width: 1421px) {
+    .toolbar-center {
+      min-height:40px;
+    }
   }
   .tool-btn{
     display:inline-flex;align-items:center;gap:8px;
@@ -135,6 +263,7 @@
     border-radius: 5px;
     padding: 5px 8px;
     background: transparent;
+    min-height: 34px;
   }
 
   .tool-btn-group .tool-btn:first-child {
@@ -162,12 +291,22 @@
     border-color: #93c5fd;
   }
 
-  .tool-btn-group.active .tool-btn {
-    color: #1e40af;
-  }
-  
-  .tool-btn-group.active .tool-btn:hover {
+  .tool-btn-group.active .tool-btn:hover:not(.active) {
     background: rgba(31, 41, 55, 0.1);
+  }
+
+  .tool-choice-btn {
+    gap: 6px;
+  }
+  .tool-choice-btn svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   /* Equal width for primary tool groups */
@@ -206,8 +345,8 @@
 
   /* Copied popup notification */
   #copy-feedback {
-    position: absolute;
-    bottom: -35px;
+    position: fixed;
+    top: 0;
     left: 50%;
     transform: translateX(-50%);
     background: #2b6cb0;
@@ -246,13 +385,14 @@
   }
 
   .app{
-    display:flex;flex:1;overflow:hidden;height:calc(100vh - var(--toolbar-h));
+    display:flex;flex:1;min-height:0;overflow:hidden;height:auto;
   }
-  .board-wrap{flex:1;position:relative;display:flex;flex-direction:column;overflow:auto;-ms-overflow-style:none;scrollbar-width:none;}
+  .board-wrap{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;overflow:auto;-ms-overflow-style:none;scrollbar-width:none;}
   /* Hide scrollbars while keeping scroll functionality */
   .board-wrap::-webkit-scrollbar { display: none; }
   .board{
     position:relative;flex:1;margin:6px;background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;overflow:hidden;
+    box-sizing:border-box;
     box-shadow:0 4px 14px rgba(2,6,23,0.06);border:1px solid #e9eef6;
     width: 100%; height: 100%;
     max-width:1920px;max-height:1080px;
@@ -363,8 +503,7 @@
     pointer-events: none; /* Wrapper is click-through */
   }
   .stroke-wrapper.selected {
-    outline: 2px solid var(--accent); /* Show selection on wrapper */
-    outline-offset: 2px;
+    outline: none;
   }
   .stroke-wrapper g,
   .stroke-wrapper path {
@@ -421,6 +560,21 @@
     stroke-dasharray: 4 2;
     fill: rgba(43,108,176,0.08);
     pointer-events: none;
+  }
+  .selection-region{
+    position:absolute;
+    z-index:2002;
+    box-sizing:border-box;
+    border:1.5px solid var(--accent);
+    background:rgba(43,108,176,0.08);
+    pointer-events:none;
+  }
+  .selected-bounds-outline{
+    position:fixed;
+    z-index:2001;
+    box-sizing:border-box;
+    border:1.5px dashed var(--accent);
+    pointer-events:none;
   }
 
   .layers{
@@ -647,15 +801,136 @@
   }
   #ext-warning .btn { padding:6px 8px;border-radius:6px;background:#fff;border:1px solid #e6e6e6;cursor:pointer }
 
+  @media (min-width: 821px) and (max-width: 1420px) {
+    .toolbar {
+      grid-template-columns:auto auto;
+      grid-template-areas:
+        "tools actions"
+        "center center";
+      justify-content:space-between;
+      gap:8px 12px;
+    }
+    .toolbar-center {
+      width:100%;
+    }
+    .toolbar-center > #stroke-toolbar {
+      width:100%;
+      max-width:100%;
+      margin:0 !important;
+      flex-direction:row;
+      align-items:center;
+    }
+    .stroke-width-control,
+    .stroke-quick-actions {
+      width:max-content;
+      max-width:100%;
+      flex:0 0 auto;
+      min-width:0;
+      justify-content:center;
+    }
+    .stroke-settings-cluster {
+      width:max-content;
+      flex-direction:row;
+      align-items:center;
+      gap:8px;
+    }
+  }
+
   @media (max-width: 820px) {
+    .toolbar{
+      gap: 8px;
+      padding-inline: 8px;
+      grid-template-columns:minmax(0,1fr);
+      grid-template-areas:
+        "tools"
+        "center"
+        "actions";
+    }
+    .toolbar-center {
+      width:100%;
+      min-width:0;
+      justify-content:center;
+    }
+    #stroke-toolbar {
+      width:100%;
+      margin:0 !important;
+      flex-direction:column;
+      align-items:stretch;
+      gap:8px;
+    }
+    .stroke-width-control,
+    .stroke-quick-actions {
+      width:100%;
+      flex:0 0 auto;
+      min-width:0;
+      justify-content:center;
+    }
+    .stroke-settings-cluster {
+      width:100%;
+      flex-direction:column;
+      align-items:stretch;
+      gap:8px;
+    }
+    .toolbar:not(.toolbar-has-options) .spacer {
+      display:none;
+    }
+
+    #select-tool-group,
+    #draw-tool-group,
+    #text-tool-group {
+      min-width: 0;
+    }
+    .toolbar .tool-btn-group > button:not(.tool-choice-btn) {
+      width:24px;
+      min-width:24px;
+      padding:4px;
+      justify-content:center;
+    }
+    .tool-choice-btn .tool-label {
+      display: none;
+    }
+    .tool-btn-group .tool-choice-btn {
+      width: 34px;
+      min-width: 34px;
+      padding: 5px;
+      justify-content: center;
+    }
+    #export-json,
+    #import-json {
+      width:34px;
+      height:32px;
+      padding:5px 6px;
+      justify-content:center;
+    }
+    .toolbar-tools,
+    .toolbar-actions {
+      gap:4px;
+    }
+    .toolbar-actions > .toolbar-view-actions {
+      gap:4px !important;
+    }
+    .toolbar-view-actions #zoom-reset,
+    .toolbar-view-actions #copy-png {
+      width:34px;
+      height:32px;
+      padding:5px 6px;
+      justify-content:center;
+    }
     .responsive-icon-btn {
       gap: 0;
       padding: 6px;
       width: 36px;
       justify-content: center;
     }
+
     .responsive-icon-btn span {
       display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    #toolbar-stroke-width {
+      width:110px !important;
     }
   }
 
@@ -668,24 +943,6 @@
   }
   .toolbar-condensed .responsive-icon-btn span {
       display: none;
-  }
-
-  /* Shrink the fixed width of the groups when super condensed */
-  .toolbar-super-condensed #select-tool-group,
-  .toolbar-super-condensed #draw-tool-group,
-  .toolbar-super-condensed #text-tool-group {
-    min-width: auto;
-  }
-
-  /* Make the main tool buttons themselves narrower (about 2 letters wide) */
-  .toolbar-super-condensed #tool-select,
-  .toolbar-super-condensed #tool-draw,
-  .toolbar-super-condensed #tool-text {
-    min-width: 28px;
-    width: 28px;
-    padding: 5px 4px;
-    justify-content: center;
-    text-align: center;
   }
 
   /* Selection mode menu styles */
@@ -935,9 +1192,13 @@
     <div class="spinner"></div>
     <div class="loading-text">Loading Board</div>
   </div>
-  <div class="toolbar" role="toolbar" aria-label="tools">
+  <div class="toolbar" role="toolbar" aria-label="Main toolbar">
+    <div class="toolbar-tools">
     <div class="tool-btn-group" id="select-tool-group">
-      <button class="tool-btn" data-tool="select" id="tool-select" title="Select (V)">Select</button>
+      <button class="tool-btn tool-choice-btn" type="button" data-tool="select" id="tool-select" title="Select (V)" aria-label="Select" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 10-7 1-3 7L5 3z"/></svg>
+        <span class="tool-label">Select</span>
+      </button>
       <button class="tool-btn" id="select-mode-btn" title="Selection mode" aria-haspopup="true" aria-expanded="false">
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M2 4l4 4 4-4z" fill="currentColor" />
@@ -950,7 +1211,10 @@
     </div>
     
     <div class="tool-btn-group" id="draw-tool-group">
-      <button class="tool-btn" data-tool="draw" id="tool-draw" title="Draw (D)">Draw</button>
+      <button class="tool-btn tool-choice-btn" type="button" data-tool="draw" id="tool-draw" title="Draw (D)" aria-label="Draw" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z"/></svg>
+        <span class="tool-label">Draw</span>
+      </button>
       <button class="tool-btn" id="stroke-settings" title="Stroke settings" aria-haspopup="true" aria-expanded="false">
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M2 4l4 4 4-4z" fill="currentColor" />
@@ -960,7 +1224,10 @@
     </div>
     
     <div class="tool-btn-group" id="text-tool-group">
-      <button class="tool-btn" data-tool="text" id="tool-text" title="Text (T)">Text</button>
+      <button class="tool-btn tool-choice-btn" type="button" data-tool="text" id="tool-text" title="Text (T)" aria-label="Text" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+        <span class="tool-label">Text</span>
+      </button>
       <button class="tool-btn" id="text-settings" title="Text settings" aria-haspopup="true" aria-expanded="false">
         <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M2 4l4 4 4-4z" fill="currentColor" />
@@ -978,8 +1245,9 @@
         <path d="M21 7v6h-6M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"/>
       </svg>
     </button>
+    </div>
 
-    <div class="toolbar-center" style="display:flex;align-items:center;justify-content:center;gap:0;flex:1;">
+    <div class="toolbar-center">
       <div id="image-transparency" style="display:none;align-items:center;gap:8px;margin:0 8px;">
         <label style="font-size:13px;font-weight:500;color:#374151;">Opacity:</label>
         <input type="range" id="transparency-slider" min="0" max="100" value="100" style="width:200px">
@@ -1001,49 +1269,54 @@
       </div>
       
       <div id="stroke-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
-        <label style="font-size:13px">Width:</label>
-        <input type="range" id="toolbar-stroke-width" min="0" max="100" step="0.5" value="22" style="width:200px">
-        <span id="toolbar-stroke-value" style="font-size:13px;min-width:36px">2</span>
-        <svg id="stroke-width-preview" width="48" height="24" viewBox="0 0 48 24" style="background:transparent;">
-          <line x1="6" y1="12" x2="42" y2="12" stroke="#111" stroke-linecap="round" stroke-width="2" />
-        </svg>
-        <div id="quick-stroke-colors" style="display:flex;gap:6px;align-items:center;margin-left:6px;position:relative;">
-          <button class="tool-btn" id="quick-stroke-colors-main" title="Stroke color" style="width:28px;height:28px;padding:0;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.06)"></button>
-          <div class="quick-stroke-colors-dropdown">
-            <button class="tool-btn" data-color="#111111" title="Black" style="width:28px;height:28px;padding:0;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.06)"></button>
-            <button class="tool-btn" data-color="#2b6cb0" title="Blue" style="width:28px;height:28px;padding:0;border-radius:6px;background:#2b6cb0;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#e53e3e" title="Red" style="width:28px;height:28px;padding:0;border-radius:6px;background:#e53e3e;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#ff9234" title="Orange" style="width:28px;height:28px;padding:0;border-radius:6px;background:#ff9234;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#10b981" title="Green" style="width:28px;height:28px;padding:0;border-radius:6px;background:#10b981;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#8b5cf6" title="Purple" style="width:28px;height:28px;padding:0;border-radius:6px;background:#8b5cf6;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#EAB308" title="Yellow" style="width:28px;height:28px;padding:0;border-radius:6px;background:#EAB308;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#ec4899" title="Pink" style="width:28px;height:28px;padding:0;border-radius:6px;background:#ec4899;border:1px solid rgba(0,0,0,0.08)"></button>
-            <button class="tool-btn" data-color="#06b6d4" title="Cyan" style="width:28px;height:28px;padding:0;border-radius:6px;background:#06b6d4;border:1px solid rgba(0,0,0,0.08)"></button>
+        <div class="stroke-settings-cluster">
+          <div class="stroke-width-control">
+            <label style="font-size:13px">Width:</label>
+            <input type="range" id="toolbar-stroke-width" min="0" max="100" step="0.5" value="22" style="width:200px">
+            <span id="toolbar-stroke-value" style="font-size:13px;min-width:36px">2</span>
+            <svg id="stroke-width-preview" width="48" height="24" viewBox="0 0 48 24" style="background:transparent;">
+              <line x1="6" y1="12" x2="42" y2="12" stroke="#111" stroke-linecap="round" stroke-width="2" />
+            </svg>
+          </div>
+          <div class="stroke-quick-actions">
+            <div id="quick-stroke-colors" style="display:flex;gap:6px;align-items:center;margin-left:6px;position:relative;">
+              <button class="tool-btn" id="quick-stroke-colors-main" title="Stroke color" style="width:28px;height:28px;padding:0;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.06)"></button>
+              <div class="quick-stroke-colors-dropdown">
+                <button class="tool-btn" data-color="#111111" title="Black" style="width:28px;height:28px;padding:0;border-radius:6px;background:#111;border:1px solid rgba(255,255,255,0.06)"></button>
+                <button class="tool-btn" data-color="#2b6cb0" title="Blue" style="width:28px;height:28px;padding:0;border-radius:6px;background:#2b6cb0;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#e53e3e" title="Red" style="width:28px;height:28px;padding:0;border-radius:6px;background:#e53e3e;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#ff9234" title="Orange" style="width:28px;height:28px;padding:0;border-radius:6px;background:#ff9234;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#10b981" title="Green" style="width:28px;height:28px;padding:0;border-radius:6px;background:#10b981;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#8b5cf6" title="Purple" style="width:28px;height:28px;padding:0;border-radius:6px;background:#8b5cf6;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#EAB308" title="Yellow" style="width:28px;height:28px;padding:0;border-radius:6px;background:#EAB308;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#ec4899" title="Pink" style="width:28px;height:28px;padding:0;border-radius:6px;background:#ec4899;border:1px solid rgba(0,0,0,0.08)"></button>
+                <button class="tool-btn" data-color="#06b6d4" title="Cyan" style="width:28px;height:28px;padding:0;border-radius:6px;background:#06b6d4;border:1px solid rgba(0,0,0,0.08)"></button>
+              </div>
+            </div>
+            <div id="quick-arrow-toggle" class="tool-btn-group" style="margin-left: 4px;">
+              <button class="tool-btn" id="quick-start-arrow" title="Arrow at start" style="padding: 6px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <button class="tool-btn" id="quick-end-arrow" title="Arrow at end" style="padding: 6px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+            <button class="tool-btn" id="quick-rounded-lines" title="Rounded Corners" style="margin-left: 0px; padding: 6px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 5h7a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7"/>
+              </svg>
+            </button>
+            <button class="tool-btn" id="quick-circle-transform" title="Transform to Circle" style="margin-left: 0px; padding: 6px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"></circle>
+              </svg>
+            </button>
           </div>
         </div>
-        <div id="quick-arrow-toggle" class="tool-btn-group" style="margin-left: 4px;">
-          <button class="tool-btn" id="quick-start-arrow" title="Arrow at start" style="padding: 6px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 12H5M12 19l-7-7 7-7"/>
-              </svg>
-          </button>
-          <button class="tool-btn" id="quick-end-arrow" title="Arrow at end" style="padding: 6px;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-              </svg>
-          </button>
-        </div>
-        <button class="tool-btn" id="quick-rounded-lines" title="Rounded Corners" style="margin-left: 0px; padding: 6px;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M7 5h7a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7"/>
-          </svg>
-        </button>
-        
-        <button class="tool-btn" id="quick-circle-transform" title="Transform to Circle" style="margin-left: 0px; padding: 6px;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9"></circle>
-          </svg>
-        </button>
       </div>
       
       <div id="text-toolbar" style="display:none;align-items:center;gap:8px;margin:0 8px;">
@@ -1080,9 +1353,10 @@
       </div>
     </div>
     
+    <div class="toolbar-actions">
     <div class="spacer" style="flex:0;"></div>
 
-    <div style="display:flex;align-items:center;gap:6px;position:relative;">
+    <div class="toolbar-view-actions" style="display:flex;align-items:center;gap:6px;position:relative;">
       <button class="tool-btn" id="zoom-reset" title="ReFit (Ctrl+F)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden>
           <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0m3 0h12"/>
@@ -1133,6 +1407,7 @@
         <path d="M3 4h18"/>
       </svg>
     </button>
+    </div>
 
   </div>
 
@@ -1478,9 +1753,9 @@ let isLassoing = false;
 let lassoPoints = [];
 let lassoPath = null;
 let isSelectingRect = false; // For rectangular selection
-let rectSelectStartX = 0;
-let rectSelectStartY = 0;
-let rectSelectPath = null; // SVG path for displaying the rectangle
+let rectSelectStartScreenX = 0;
+let rectSelectStartScreenY = 0;
+let rectSelectPath = null; // Screen-aligned overlay for rectangular selection
 let straightLineState = null; // For polyline drawing
 
 // --- Undo/Redo system ---
@@ -1492,11 +1767,13 @@ let isRestoringHistory = false; // Guard to avoid recording history while restor
 let sliderChanging = false;
 let isDeleting = false;
 let ignoreNextBlurHistory = false;
+let toolbarOverflowTimer = null;
 
 window.addEventListener('resize', () => {
     // We don't want to check for overflow while resizing is in progress
     if(document.body.classList.contains('dragging')) return;
     checkToolbarOverflow();
+    updateSelectedBoundsOutline();
 });
 
 // Call this at the start of a slider change to record the initial state, and set a guard to avoid recording intermediate states until finalized
@@ -1549,15 +1826,20 @@ const guideV = el('#guide-v');
 
 // --- NEW: Get board coordinates from mouse event, accounting for scale and position
 function getBoardPointFromEvent(e){
-  const rect = board.getBoundingClientRect();
-  const x = (e.clientX - rect.left) / state.scale;
-  const y = (e.clientY - rect.top) / state.scale;
-  return { x, y };
+  const screenToBoard = svg.getScreenCTM()?.inverse();
+  if (!screenToBoard) {
+    throw new Error('Could not map the pointer to board coordinates.');
+  }
+  const point = svg.createSVGPoint();
+  point.x = e.clientX;
+  point.y = e.clientY;
+  const boardPoint = point.matrixTransform(screenToBoard);
+  return { x: boardPoint.x, y: boardPoint.y };
 }
 
 
 // --- Finalize the current stroke group by making it selectable and refreshing layers, or removing it if empty. Also clear selection to avoid leaving the last stroke active.
-function finalizeStrokeGroup() {
+function finalizeStrokeGroup(clearCurrentSelection = true) {
     if (currentPath) {
         currentPath.classList.remove('is-drawing');
     }
@@ -1583,7 +1865,7 @@ function finalizeStrokeGroup() {
         currentPath = null;
     }
     straightLineState = null;
-    clearSelection();
+    if (clearCurrentSelection) clearSelection();
 }
 
 /// --- Create snapshot of current board state for undo/redo and export
@@ -1984,10 +2266,9 @@ function setTool(t){
   state.tool = t;
 
   TOOL_BTN.forEach(b => {
-
-    if (!b.closest('.tool-btn-group')) {
-      b.classList.toggle('active', b.dataset.tool === t);
-    }
+    const isSelected = b.dataset.tool === t;
+    b.classList.toggle('active', isSelected);
+    b.setAttribute('aria-pressed', String(isSelected));
   });
 
   // Hide opacity slider when switching away from select tool
@@ -2065,7 +2346,15 @@ function setTool(t){
               function checkToolbarOverflow() {
                   const toolbar = el('.toolbar');
                   if (!toolbar) return;
-                  setTimeout(() => {
+                  const hasToolbarOptions = ['#image-transparency', '#stroke-toolbar', '#text-toolbar']
+                      .some(selector => {
+                          const options = el(selector);
+                          return options && options.style.display !== 'none';
+                      });
+                  toolbar.classList.toggle('toolbar-has-options', hasToolbarOptions);
+                  clearTimeout(toolbarOverflowTimer);
+                  toolbarOverflowTimer = setTimeout(() => {
+                      toolbarOverflowTimer = null;
                       if (document.body.classList.contains('dragging')) return;
 
                       // --- Create an off-screen clone to pre-determine the final state ---
@@ -2077,16 +2366,11 @@ function setTool(t){
                       clone.style.width = toolbar.clientWidth + 'px';
                       document.body.appendChild(clone);
 
-                      const mainToolsFull = { '#tool-select': 'Select', '#tool-draw': 'Draw', '#tool-text': 'Text' };
-
-                      const mainToolsShort = { '#tool-select': 'S', '#tool-draw': 'D', '#tool-text': 'T' };
-
                       // --- Use the clone to determine the required condensation level ---
                       let condensationLevel = 0;
 
-                      // Reset clone to full expansion to get a baseline
+                      // Reset clone to an expanded state to get a baseline
                       clone.classList.remove('toolbar-condensed', 'toolbar-super-condensed');
-                      for (const id in mainToolsFull) { clone.querySelector(id).innerText = mainToolsFull[id]; }
 
                       // Ensure quick colors and toolbars are properly visible for accurate space calculation
                       const quickColorsClone = clone.querySelector('#quick-stroke-colors');
@@ -2120,18 +2404,11 @@ function setTool(t){
                       if (clone.scrollWidth > clone.clientWidth + 1) {
                           condensationLevel = 3;
                           clone.classList.add('toolbar-super-condensed');
-                          for (const id in mainToolsShort) { clone.querySelector(id).innerText = mainToolsShort[id]; }
                       }
 
                       // --- Apply the final determined state to the REAL toolbar in one go ---
                       toolbar.classList.toggle('toolbar-condensed', condensationLevel >= 1);
                       toolbar.classList.toggle('toolbar-super-condensed', condensationLevel >= 3);
-
-                      if (condensationLevel >= 3) {
-                          for (const id in mainToolsShort) { el(id).innerText = mainToolsShort[id]; }
-                      } else {
-                          for (const id in mainToolsFull) { el(id).innerText = mainToolsFull[id]; }
-                      }
 
                       // Apply color picker visibility based on space availability and stroke toolbar state
                       const quickColors = el('#quick-stroke-colors');
@@ -2140,6 +2417,39 @@ function setTool(t){
                       if (quickColors && strokeToolbar && strokeToolbar.style.display !== 'none') {
                           quickColors.style.display = (condensationLevel >= 2) ? 'none' : 'flex';
                       }
+
+                      const measurementClone = toolbar.cloneNode(true);
+                      measurementClone.style.position = 'absolute';
+                      measurementClone.style.left = '-10000px';
+                      measurementClone.style.top = '0';
+                      measurementClone.style.visibility = 'hidden';
+                      measurementClone.style.width = `${toolbar.getBoundingClientRect().width}px`;
+                      measurementClone.style.height = 'auto';
+                      measurementClone.style.minHeight = '0';
+                      measurementClone.style.removeProperty('--toolbar-settings-height');
+                      measurementClone.classList.remove('toolbar-has-options');
+                      document.body.appendChild(measurementClone);
+
+                      const settings = {
+                          transparency: measurementClone.querySelector('#image-transparency'),
+                          stroke: measurementClone.querySelector('#stroke-toolbar'),
+                          text: measurementClone.querySelector('#text-toolbar'),
+                          quickColors: measurementClone.querySelector('#quick-stroke-colors')
+                      };
+                      let maxHeight = 0;
+                      const settingsContainer = measurementClone.querySelector('.toolbar-center');
+
+                      for (const panel of ['none', 'transparency', 'stroke', 'text']) {
+                          settings.transparency.style.display = panel === 'transparency' ? 'flex' : 'none';
+                          settings.stroke.style.display = panel === 'stroke' ? 'flex' : 'none';
+                          settings.text.style.display = panel === 'text' ? 'flex' : 'none';
+                          settings.quickColors.style.display = panel === 'stroke' && condensationLevel < 2 ? 'flex' : 'none';
+                          measurementClone.classList.toggle('toolbar-has-options', panel !== 'none');
+                          maxHeight = Math.max(maxHeight, settingsContainer.getBoundingClientRect().height);
+                      }
+
+                      toolbar.style.setProperty('--toolbar-settings-height', `${Math.ceil(maxHeight)}px`);
+                      document.body.removeChild(measurementClone);
 
                       // --- Cleanup ---
                       document.body.removeChild(clone);
@@ -2737,6 +3047,7 @@ function clearSelection(){
   // Hide text toolbar when no text is selected
   const textToolbar = el('#text-toolbar');
   if(textToolbar && textToolbar.style.display !== 'none') textToolbar.style.display = 'none';
+  updateSelectedBoundsOutline();
   checkToolbarOverflow();
 }
 
@@ -2902,7 +3213,7 @@ function makeSvgSelectable(gElement){
 
     ev.stopPropagation();
     
-    finalizeStrokeGroup();
+    finalizeStrokeGroup(false);
 
     const addToSelection = ev.shiftKey;
 
@@ -2950,6 +3261,9 @@ function makePathSelectable(path){
 
   const onHitPointerDown = (ev) => {
     const pid = path.dataset.id;
+    const svgWrapper = path.closest('.stroke-wrapper');
+    const wrapperId = svgWrapper?.dataset.id;
+    const wrapperIsSelected = wrapperId && state.selectedIds.has(wrapperId);
     const isAlreadySelected = state.selectedIds.has(pid);
 
     // --- BUGFIX: Only prevent selection if we're ACTIVELY drawing, not just in draw mode ---
@@ -2960,6 +3274,18 @@ function makePathSelectable(path){
         ev.stopPropagation();
         return;
       }
+    }
+
+    if (wrapperIsSelected && (state.tool === 'select' || state.tool === 'draw')) {
+      ev.stopPropagation();
+      if (ev.shiftKey) {
+        state.selectedIds.delete(wrapperId);
+        svgWrapper.classList.remove('selected');
+        refreshLayers();
+        return;
+      }
+      startDragSvg(svgWrapper.querySelector('g'), ev);
+      return;
     }
     
     ev.stopPropagation();
@@ -2996,14 +3322,36 @@ function makePathSelectable(path){
 // Drag state will track the initial pointer position and the original positions of all items being dragged. For SVG items, we also store the original transform to apply additive translations.
 let dragState = null;
 
+function getScreenTranslatedTransform(node, originalTransform, screenDx, screenDy) {
+  const parentToScreen = node.parentElement?.getScreenCTM();
+  if (!parentToScreen) {
+    throw new Error('Could not map the drag translation to the stroke coordinate system.');
+  }
+  const screenToParent = new DOMMatrix([
+    parentToScreen.a,
+    parentToScreen.b,
+    parentToScreen.c,
+    parentToScreen.d,
+    0,
+    0
+  ]).inverse();
+  const parentDx = screenToParent.a * screenDx + screenToParent.c * screenDy;
+  const parentDy = screenToParent.b * screenDx + screenToParent.d * screenDy;
+  const translation = `translate(${parentDx},${parentDy})`;
+  const original = (originalTransform || '').trim();
+  return original ? `${translation} ${original}` : translation;
+}
+
 function startDragHtml(node, e){
   if(state.tool !== 'select' && !(state.tool === 'text' && (e.ctrlKey || e.metaKey))) return;
   if (!state.selectedIds.has(node.dataset.id)) return;
   e.preventDefault();
-  const pt = getBoardPointFromEvent(e);
-  const startX = pt.x;
-  const startY = pt.y;
-  dragState = { type: 'html', startX, startY, items: [] };
+  dragState = {
+    type: 'html',
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    items: []
+  };
   
   // --- NEW: Track processed nodes to avoid duplicates when multiple strokes from same group are selected ---
   const processedNodes = new Set();
@@ -3017,16 +3365,14 @@ function startDragHtml(node, e){
       const g = n.querySelector('g'); 
       if (!processedNodes.has(g)) {
         const orig = g.getAttribute('transform') || '';
-        const parsed = parseTransform(orig);
-        dragState.items.push({ node: g, type: 'svg', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        dragState.items.push({ node: g, type: 'svg', originalTransform: orig });
         processedNodes.add(g);
       }
     } else if (n.dataset.type === 'stroke') {
       // Individual path selected - drag it directly, not its parent group
       if (!processedNodes.has(n)) {
         const orig = n.getAttribute('transform') || '';
-        const parsed = parseTransform(orig);
-        dragState.items.push({ node: n, type: 'svg-path', originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        dragState.items.push({ node: n, type: 'svg-path', originalTransform: orig });
         processedNodes.add(n);
       }
     } else {
@@ -3043,8 +3389,12 @@ function startDragHtml(node, e){
 // --- MODIFIED: Unified drag handler for both SVG and HTML items ---
 function startDragSvg(element, e){
   e.preventDefault();
-  const pt = getBoardPointFromEvent(e);
-  dragState = { type: 'svg', startX: pt.x, startY: pt.y, items: [] };
+  dragState = {
+    type: 'svg',
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    items: []
+  };
   
   // --- NEW: Track processed nodes to avoid duplicates when multiple strokes from same group are selected ---
   const processedNodes = new Set();
@@ -3075,10 +3425,9 @@ function startDragSvg(element, e){
       // --- NEW: De-duplicate SVG transforms to prevent the same g element from being processed multiple times ---
       if (!processedNodes.has(gElement)) {
         const orig = gElement.getAttribute('transform') || '';
-        const parsed = parseTransform(orig);
         // If gElement is a <path> (an individual stroke), mark it as 'svg-path'
         const itemType = (gElement.tagName && gElement.tagName.toLowerCase() === 'path') ? 'svg-path' : 'svg';
-        dragState.items.push({ node: gElement, type: itemType, originalTransform: orig, baseTx: parsed.tx, baseTy: parsed.ty, transformRest: parsed.rest });
+        dragState.items.push({ node: gElement, type: itemType, originalTransform: orig });
         processedNodes.add(gElement);
       }
     }
@@ -3090,32 +3439,19 @@ function startDragSvg(element, e){
 // --- MODIFIED: Unified pointer move handler that applies additive translations to SVG elements while preserving existing transforms, and style adjustments for HTML elements ---
 function onPointerMove(e){
   if(!dragState) return;
-  const pt = getBoardPointFromEvent(e);
-  const x = pt.x;
-  const y = pt.y;
-  const dx = x - dragState.startX;
-  const dy = y - dragState.startY;
+  const screenDx = e.clientX - dragState.startClientX;
+  const screenDy = e.clientY - dragState.startClientY;
   dragState.items.forEach(item => {
     if (item.type === 'html') {
-      item.node.style.left = (item.origLeft + dx) + 'px';
-      item.node.style.top  = (item.origTop + dy) + 'px';
+      item.node.style.left = (item.origLeft + screenDx) + 'px';
+      item.node.style.top  = (item.origTop + screenDy) + 'px';
     } else if (item.type === 'svg') {
-      // Apply additive translation on the SVG element while preserving existing transforms.
-      const baseTx = parseFloat(item.baseTx) || 0;
-      const baseTy = parseFloat(item.baseTy) || 0;
-      const newTx = baseTx + dx;
-      const newTy = baseTy + dy;
-      const rest = (item.transformRest || '').trim();
-      const t = rest ? `${rest} translate(${newTx},${newTy})` : `translate(${newTx},${newTy})`;
-      item.node.setAttribute('transform', t);
+      item.node.setAttribute(
+        'transform',
+        getScreenTranslatedTransform(item.node, item.originalTransform, screenDx, screenDy)
+      );
     } else if (item.type === 'svg-path') {
-      // Translate individual SVG <path> elements
-      const baseTx = parseFloat(item.baseTx) || 0;
-      const baseTy = parseFloat(item.baseTy) || 0;
-      const newTx = baseTx + dx;
-      const newTy = baseTy + dy;
-      const rest = (item.transformRest || '').trim();
-      const t = rest ? `${rest} translate(${newTx},${newTy})` : `translate(${newTx},${newTy})`;
+      const t = getScreenTranslatedTransform(item.node, item.originalTransform, screenDx, screenDy);
       item.node.setAttribute('transform', t);
       // Also move hit path if present
       try{ if(item.node._hitPath) item.node._hitPath.setAttribute('transform', t); }catch(e){}
@@ -3124,20 +3460,17 @@ function onPointerMove(e){
   if (dragState.type === 'html') {
     refreshLayers();
   }
+  updateSelectedBoundsOutline();
 }
 
 // --- MODIFIED: Updated pointer up handler to finalize positions and only push history if a meaningful move occurred ---
 function onPointerUp(e) {
   if (!dragState) return;
 
-  const pt = getBoardPointFromEvent(e);
-  const dx = pt.x - dragState.startX;
-  const dy = pt.y - dragState.startY;
+  const screenDx = e.clientX - dragState.startClientX;
+  const screenDy = e.clientY - dragState.startClientY;
 
-  // --- NEW: Check if a meaningful drag occurred ---
-  // A tiny threshold (e.g., 1px) prevents saving history 
-  // for accidental micro-drags or simple clicks.
-  const hasMoved = Math.abs(dx) > 1 || Math.abs(dy) > 1;
+  const hasMoved = Math.abs(screenDx) > 1 || Math.abs(screenDy) > 1;
 
   // --- NEW: Create snapshot BEFORE modifying items to ensure consistent state capture ---
   let stateBeforeMove = null;
@@ -3148,12 +3481,12 @@ function onPointerUp(e) {
   dragState.items.forEach(item => {
     if (item.type === 'svg') {
       const element = item.node;
-      const baseTx = parseFloat(item.baseTx) || 0;
-      const baseTy = parseFloat(item.baseTy) || 0;
-      const finalTx = baseTx + dx;
-      const finalTy = baseTy + dy;
-      const rest = (item.transformRest || '').trim();
-      const newTransform = rest ? `${rest} translate(${finalTx},${finalTy})` : `translate(${finalTx},${finalTy})`;
+      const newTransform = getScreenTranslatedTransform(
+        element,
+        item.originalTransform,
+        screenDx,
+        screenDy
+      );
       element.setAttribute('transform', newTransform);
 
       // ✅ Ensure arrow markers (if present) stay with the stroke
@@ -3165,12 +3498,12 @@ function onPointerUp(e) {
     } 
     else if (item.type === 'svg-path') {
       const element = item.node;
-      const baseTx = parseFloat(item.baseTx) || 0;
-      const baseTy = parseFloat(item.baseTy) || 0;
-      const finalTx = baseTx + dx;
-      const finalTy = baseTy + dy;
-      const rest = (item.transformRest || '').trim();
-      const newTransform = rest ? `${rest} translate(${finalTx},${finalTy})` : `translate(${finalTx},${finalTy})`;
+      const newTransform = getScreenTranslatedTransform(
+        element,
+        item.originalTransform,
+        screenDx,
+        screenDy
+      );
       element.setAttribute('transform', newTransform);
 
       // Keep defs with the stroke-wrapper (if any)
@@ -3184,8 +3517,8 @@ function onPointerUp(e) {
     }
     else if (item.type === 'html') {
       // ✅ HTML items (like text boxes)
-      item.node.style.left = (item.origLeft + dx) + 'px';
-      item.node.style.top = (item.origTop + dy) + 'px';
+      item.node.style.left = (item.origLeft + screenDx) + 'px';
+      item.node.style.top = (item.origTop + screenDy) + 'px';
     }
   });
 
@@ -3551,8 +3884,8 @@ function onBoardPointerDown(e) {
     // Block move logic: if the user clicks inside the bounding box of the current selection, treat it as a group drag.
     if (!clickedOnItem && state.tool === 'select' && state.selectedIds.size > 0) {
       const selBounds = calculateSelectedBounds();
-      if (selBounds && pt.x >= selBounds.minX && pt.x <= selBounds.maxX && 
-          pt.y >= selBounds.minY && pt.y <= selBounds.maxY) {
+      if (selBounds && e.clientX >= selBounds.minX && e.clientX <= selBounds.maxX &&
+          e.clientY >= selBounds.minY && e.clientY <= selBounds.maxY) {
         const firstId = state.selectedIds.values().next().value;
         const anchor = findNodeById(firstId);
         if (anchor) {
@@ -3575,18 +3908,17 @@ function onBoardPointerDown(e) {
         board.setPointerCapture?.(e.pointerId);
       } else {
         isSelectingRect = true;
-        rectSelectStartX = x;
-        rectSelectStartY = y;
-        rectSelectPath = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rectSelectPath.setAttribute('fill', 'rgba(43, 108, 176, 0.08)');
-        rectSelectPath.setAttribute('stroke', 'var(--accent)');
-        rectSelectPath.setAttribute('stroke-width', '1.5');
-        rectSelectPath.setAttribute('x', x);
-        rectSelectPath.setAttribute('y', y);
-        rectSelectPath.setAttribute('width', '0');
-        rectSelectPath.setAttribute('height', '0');
-        rectSelectPath.setAttribute('style', 'pointer-events: none;');
-        el('#guide-layer').appendChild(rectSelectPath);
+        rectSelectStartScreenX = e.clientX;
+        rectSelectStartScreenY = e.clientY;
+        rectSelectPath = document.createElement('div');
+        rectSelectPath.classList.add('selection-region');
+        const wrap = board.parentElement;
+        const wrapRect = wrap.getBoundingClientRect();
+        rectSelectPath.style.left = `${e.clientX - wrapRect.left + wrap.scrollLeft}px`;
+        rectSelectPath.style.top = `${e.clientY - wrapRect.top + wrap.scrollTop}px`;
+        rectSelectPath.style.width = '0px';
+        rectSelectPath.style.height = '0px';
+        wrap.appendChild(rectSelectPath);
         clearSelection();
         refreshLayers();
         board.setPointerCapture?.(e.pointerId);
@@ -3618,14 +3950,16 @@ function onBoardPointerMove(e) {
   }
 
   if (isSelectingRect) {
-    const pt = getBoardPointFromEvent(e);
-    const x = pt.x, y = pt.y;
-    const width = x - rectSelectStartX;
-    const height = y - rectSelectStartY;
-    rectSelectPath.setAttribute('x', Math.min(rectSelectStartX, x));
-    rectSelectPath.setAttribute('y', Math.min(rectSelectStartY, y));
-    rectSelectPath.setAttribute('width', Math.abs(width));
-    rectSelectPath.setAttribute('height', Math.abs(height));
+    const wrap = board.parentElement;
+    const wrapRect = wrap.getBoundingClientRect();
+    const startX = rectSelectStartScreenX - wrapRect.left + wrap.scrollLeft;
+    const startY = rectSelectStartScreenY - wrapRect.top + wrap.scrollTop;
+    const currentX = e.clientX - wrapRect.left + wrap.scrollLeft;
+    const currentY = e.clientY - wrapRect.top + wrap.scrollTop;
+    rectSelectPath.style.left = `${Math.min(startX, currentX)}px`;
+    rectSelectPath.style.top = `${Math.min(startY, currentY)}px`;
+    rectSelectPath.style.width = `${Math.abs(currentX - startX)}px`;
+    rectSelectPath.style.height = `${Math.abs(currentY - startY)}px`;
     return;
   }
 
@@ -3806,13 +4140,11 @@ function onBoardPointerUp(e){
     didDrawOrLasso = true;
     rectSelectPath.remove();
     rectSelectPath = null;
-    const boardRect = board.getBoundingClientRect();
 
-    // Calculate actual rect bounds
-    const minX = Math.min(rectSelectStartX, x);
-    const maxX = Math.max(rectSelectStartX, x);
-    const minY = Math.min(rectSelectStartY, y);
-    const maxY = Math.max(rectSelectStartY, y);
+    const minX = Math.min(rectSelectStartScreenX, e.clientX);
+    const maxX = Math.max(rectSelectStartScreenX, e.clientX);
+    const minY = Math.min(rectSelectStartScreenY, e.clientY);
+    const maxY = Math.max(rectSelectStartScreenY, e.clientY);
 
     const allItems = board.querySelectorAll('.item');
     clearSelection();
@@ -3820,8 +4152,8 @@ function onBoardPointerUp(e){
       const type = node.dataset.type;
       if (type !== 'image' && type !== 'text') return;
       const nRect = node.getBoundingClientRect();
-      const itemCenterX = ((nRect.left - boardRect.left) + nRect.width / 2) / state.scale;
-      const itemCenterY = ((nRect.top - boardRect.top) + nRect.height / 2) / state.scale;
+      const itemCenterX = nRect.left + nRect.width / 2;
+      const itemCenterY = nRect.top + nRect.height / 2;
       if (itemCenterX >= minX && itemCenterX <= maxX && itemCenterY >= minY && itemCenterY <= maxY) {
         state.selectedIds.add(node.dataset.id);
         node.classList.add('selected');
@@ -3829,9 +4161,13 @@ function onBoardPointerUp(e){
     });
 
     board.querySelectorAll('path.stroke').forEach(p => {
-      const pRect = p.getBoundingClientRect();
-      const px = ((pRect.left - boardRect.left) + pRect.width / 2) / state.scale;
-      const py = ((pRect.top - boardRect.top) + pRect.height / 2) / state.scale;
+      const box = p.getBBox();
+      const matrix = p.getScreenCTM();
+      if (!matrix) return;
+      const center = new DOMPoint(box.x + box.width / 2, box.y + box.height / 2)
+        .matrixTransform(matrix);
+      const px = center.x;
+      const py = center.y;
       if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
         state.selectedIds.add(p.dataset.id);
         p.classList.add('selected');
@@ -4216,6 +4552,7 @@ function collectAllItems(){
 }
 
 function refreshLayers(){
+  updateSelectedBoundsOutline();
   if (!layerList) return; 
   const items = collectAllItems();
   layerList.innerHTML = '';
@@ -4763,6 +5100,7 @@ function applyScale(){
     guideH.setAttribute('stroke-dasharray', `${4 * inverseScale} ${2 * inverseScale}`);
     guideV.setAttribute('stroke-dasharray', `${4 * inverseScale} ${2 * inverseScale}`);
   }
+  updateSelectedBoundsOutline();
 }
 
 function setScale(newScale){
@@ -4777,86 +5115,160 @@ const copyPngBtn = el('#copy-png');
 
 // Calculate bounding box of all content on the board
 function calculateContentBounds() {
-  const boardRect = board.getBoundingClientRect();
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   let hasContent = false;
 
-  // Check all items (images, text)
+  // HTML item styles and dimensions are already in board-space CSS pixels.
   board.querySelectorAll('.item').forEach(item => {
+    const x = parseFloat(item.style.left) || 0;
+    const y = parseFloat(item.style.top) || 0;
+    const w = item.offsetWidth;
+    const h = item.offsetHeight;
+    if (w <= 0 || h <= 0) return;
+
     hasContent = true;
-    const rect = item.getBoundingClientRect();
-    const x = (rect.left - boardRect.left) / state.scale;
-    const y = (rect.top - boardRect.top) / state.scale;
-    const w = rect.width / state.scale;
-    const h = rect.height / state.scale;
     minX = Math.min(minX, x);
     minY = Math.min(minY, y);
     maxX = Math.max(maxX, x + w);
     maxY = Math.max(maxY, y + h);
   });
 
-  // Check all stroke wrappers - use getBBox for accurate SVG bounds
+  // Map SVG geometry back into board coordinates so bounds stay stable at every zoom.
+  const screenToBoard = svg.getScreenCTM()?.inverse();
+  if (!screenToBoard) {
+    throw new Error('Could not map canvas content to board coordinates.');
+  }
   board.querySelectorAll('.stroke-wrapper').forEach(wrapper => {
-    // Skip empty wrappers (all strokes deleted)
     const g = wrapper.querySelector('g');
     const paths = g?.querySelectorAll('.stroke');
-    if (!paths || paths.length === 0) return;
+    if (!g || !paths || paths.length === 0) return;
 
-    try {
-      const rect = g.getBoundingClientRect();
-      const x = (rect.left - boardRect.left) / state.scale;
-      const y = (rect.top - boardRect.top) / state.scale;
-      const w = rect.width / state.scale;
-      const h = rect.height / state.scale;
-      if (w > 0 || h > 0) {
-        hasContent = true;
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x + w);
-        maxY = Math.max(maxY, y + h);
-      }
-    } catch (e) {
-      // Fallback for safety, though getBoundingClientRect is reliable
-      const rect = wrapper.getBoundingClientRect();
-      const x = (rect.left - boardRect.left) / state.scale;
-      const y = (rect.top - boardRect.top) / state.scale;
-      const w = rect.width / state.scale;
-      const h = rect.height / state.scale;
-      if (w > 0 && h > 0) {
-        hasContent = true;
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x + w);
-        maxY = Math.max(maxY, y + h);
-      }
+    const box = g.getBBox();
+    const groupToBoard = screenToBoard.multiply(g.getScreenCTM());
+    if (!groupToBoard) {
+      throw new Error(`Could not map stroke group ${wrapper.dataset.id} to board coordinates.`);
     }
+
+    let strokePadding = 0;
+    paths.forEach(path => {
+      strokePadding = Math.max(
+        strokePadding,
+        (parseFloat(path.getAttribute('stroke-width')) || 0) / 2
+      );
+    });
+    const left = box.x - strokePadding;
+    const top = box.y - strokePadding;
+    const right = box.x + box.width + strokePadding;
+    const bottom = box.y + box.height + strokePadding;
+    const corners = [
+      new DOMPoint(left, top),
+      new DOMPoint(right, top),
+      new DOMPoint(right, bottom),
+      new DOMPoint(left, bottom)
+    ].map(point => point.matrixTransform(groupToBoard));
+    const x = Math.min(...corners.map(point => point.x));
+    const y = Math.min(...corners.map(point => point.y));
+    const x2 = Math.max(...corners.map(point => point.x));
+    const y2 = Math.max(...corners.map(point => point.y));
+
+    hasContent = true;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x2);
+    maxY = Math.max(maxY, y2);
   });
 
   return { hasContent, minX, minY, maxX, maxY };
 }
 
-// Calculate the collective bounding box of all currently selected items in board-space coordinates
+// Calculate the collective bounding box of selected items in screen coordinates.
 function calculateSelectedBounds() {
   if (state.selectedIds.size === 0) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const boardRect = board.getBoundingClientRect();
 
   state.selectedIds.forEach(id => {
     const node = findNodeById(id);
     if (!node) return;
-    const rect = node.getBoundingClientRect();
-    // Convert screen coordinates to unscaled board coordinates
-    const x = (rect.left - boardRect.left) / state.scale;
-    const y = (rect.top - boardRect.top) / state.scale;
-    const w = rect.width / state.scale;
-    const h = rect.height / state.scale;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + w);
-    maxY = Math.max(maxY, y + h);
+
+    if (node.classList.contains('item')) {
+      const rect = node.getBoundingClientRect();
+      minX = Math.min(minX, rect.left);
+      minY = Math.min(minY, rect.top);
+      maxX = Math.max(maxX, rect.right);
+      maxY = Math.max(maxY, rect.bottom);
+      return;
+    }
+
+    const geometry = node.matches('path.stroke')
+      ? node
+      : node.matches('.stroke-wrapper')
+        ? node.querySelector('g')
+        : null;
+    if (!geometry) return;
+
+    const svgRoot = geometry.ownerSVGElement;
+    const rootToScreen = svgRoot?.getScreenCTM();
+    if (!svgRoot || !rootToScreen) return;
+
+    const rootToScreenMatrix = new DOMMatrix([
+      rootToScreen.a, rootToScreen.b, rootToScreen.c,
+      rootToScreen.d, rootToScreen.e, rootToScreen.f
+    ]);
+    let geometryToRoot = new DOMMatrix();
+    for (let current = geometry; current && current !== svgRoot; current = current.parentElement) {
+      const transform = current.transform?.baseVal.consolidate()?.matrix;
+      if (transform) {
+        geometryToRoot = new DOMMatrix([
+          transform.a, transform.b, transform.c,
+          transform.d, transform.e, transform.f
+        ]).multiply(geometryToRoot);
+      }
+    }
+
+    const bounds = geometry.getBBox();
+    const geometryToScreen = rootToScreenMatrix.multiply(geometryToRoot);
+    const corners = [
+      new DOMPoint(bounds.x, bounds.y),
+      new DOMPoint(bounds.x + bounds.width, bounds.y),
+      new DOMPoint(bounds.x + bounds.width, bounds.y + bounds.height),
+      new DOMPoint(bounds.x, bounds.y + bounds.height)
+    ].map(point => point.matrixTransform(geometryToScreen));
+
+    minX = Math.min(minX, ...corners.map(point => point.x));
+    minY = Math.min(minY, ...corners.map(point => point.y));
+    maxX = Math.max(maxX, ...corners.map(point => point.x));
+    maxY = Math.max(maxY, ...corners.map(point => point.y));
   });
-  return { minX, minY, maxX, maxY };
+
+  return Number.isFinite(minX) && Number.isFinite(minY) &&
+    Number.isFinite(maxX) && Number.isFinite(maxY)
+    ? { minX, minY, maxX, maxY }
+    : null;
 }
+
+function updateSelectedBoundsOutline() {
+  let outline = document.getElementById('selected-bounds-outline');
+  const bounds = calculateSelectedBounds();
+  if (!bounds) {
+    outline?.remove();
+    return;
+  }
+
+  if (!outline) {
+    outline = document.createElement('div');
+    outline.id = 'selected-bounds-outline';
+    outline.className = 'selected-bounds-outline';
+    document.body.appendChild(outline);
+  }
+
+  const padding = 5;
+  outline.style.left = `${bounds.minX - padding}px`;
+  outline.style.top = `${bounds.minY - padding}px`;
+  outline.style.width = `${bounds.maxX - bounds.minX + padding * 2}px`;
+  outline.style.height = `${bounds.maxY - bounds.minY + padding * 2}px`;
+}
+
+board.parentElement.addEventListener('scroll', updateSelectedBoundsOutline, { passive: true });
 
 // Fit the view to all content on the canvas
 function refitToContent() {
@@ -4866,6 +5278,8 @@ function refitToContent() {
   const padding = 40; // pixels of padding around content
   const contentWidth = bounds.maxX - bounds.minX;
   const contentHeight = bounds.maxY - bounds.minY;
+  if (!Number.isFinite(contentWidth) || !Number.isFinite(contentHeight) ||
+      contentWidth <= 0 || contentHeight <= 0) return;
   
   const wrap = board.parentElement;
   const viewportWidth = wrap.clientWidth;
@@ -4876,17 +5290,39 @@ function refitToContent() {
   const scaleY = (viewportHeight - padding * 2) / contentHeight;
   const newScale = Math.min(scaleX, scaleY, 4); // clamp to max 4x
   const finalScale = Math.max(newScale, 0.2); // clamp to min 0.2x
+
+  board.style.minWidth = '';
+  board.style.minHeight = '';
+  const baseBoardWidth = board.offsetWidth;
+  const baseBoardHeight = board.offsetHeight;
+  board.style.minWidth = `${Math.max(
+    baseBoardWidth,
+    Math.ceil(bounds.maxX + viewportWidth / (2 * finalScale) + padding)
+  )}px`;
+  board.style.minHeight = `${Math.max(
+    baseBoardHeight,
+    Math.ceil(bounds.maxY + viewportHeight / (2 * finalScale) + padding)
+  )}px`;
   
   setScale(finalScale);
   
-  // Center the content in the viewport
-  const scaledContentWidth = contentWidth * finalScale;
-  const scaledContentHeight = contentHeight * finalScale;
-  const scrollLeft = (bounds.minX * finalScale) - (viewportWidth - scaledContentWidth) / 2;
-  const scrollTop = (bounds.minY * finalScale) - (viewportHeight - scaledContentHeight) / 2;
-  
-  wrap.scrollLeft = Math.max(0, scrollLeft);
-  wrap.scrollTop = Math.max(0, scrollTop);
+  const screenMatrix = svg.getScreenCTM();
+  if (!screenMatrix) {
+    throw new Error('Could not map canvas content to screen coordinates.');
+  }
+  const contentCenter = new DOMPoint(
+    (bounds.minX + bounds.maxX) / 2,
+    (bounds.minY + bounds.maxY) / 2
+  ).matrixTransform(screenMatrix);
+  const wrapRect = wrap.getBoundingClientRect();
+  wrap.scrollLeft = Math.max(
+    0,
+    wrap.scrollLeft + contentCenter.x - (wrapRect.left + viewportWidth / 2)
+  );
+  wrap.scrollTop = Math.max(
+    0,
+    wrap.scrollTop + contentCenter.y - (wrapRect.top + viewportHeight / 2)
+  );
 }
 
 // Helper function to trim excess white space from canvas
@@ -5008,12 +5444,7 @@ async function copyContentAsPNG() {
         const item = new ClipboardItem({ 'image/png': blob });
         await navigator.clipboard.write([item]);
         
-        const feedback = document.querySelector('#copy-feedback');
-        if (feedback) {
-          feedback.classList.remove('show');
-          void feedback.offsetHeight; // Trigger reflow
-          feedback.classList.add('show');
-        }
+        showCopyFeedback();
       } catch (err) {
         console.error('Clipboard error:', err);
       }
@@ -6382,9 +6813,21 @@ async function imageToBlob(imgElement) {
 
 function showCopyFeedback(message = 'Copied!') {
   const feedback = document.querySelector('#copy-feedback');
-  if (feedback) {
-    // Update the message content
+  const copyButton = document.querySelector('#copy-png');
+  if (feedback && copyButton) {
     feedback.textContent = message;
+    const buttonRect = copyButton.getBoundingClientRect();
+    const feedbackHalfWidth = feedback.offsetWidth / 2;
+    const left = Math.max(feedbackHalfWidth + 8, Math.min(
+      buttonRect.left + buttonRect.width / 2,
+      window.innerWidth - feedbackHalfWidth - 8
+    ));
+    const top = Math.min(
+      buttonRect.bottom + 6,
+      window.innerHeight - feedback.offsetHeight - 8
+    );
+    feedback.style.left = `${left}px`;
+    feedback.style.top = `${top}px`;
     feedback.classList.remove('show');
     void feedback.offsetHeight; // Trigger reflow
     feedback.classList.add('show');
