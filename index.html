@@ -108,13 +108,14 @@
   }
   .stroke-width-control {
     flex:0 0 auto;
-    min-width:350px;
+    min-width:max-content;
     flex-wrap:nowrap;
+    justify-content:flex-start;
     gap:8px;
   }
   .stroke-quick-actions {
     flex:0 0 auto;
-    min-width:230px;
+    min-width:max-content;
     flex-wrap:nowrap;
     justify-content:center;
     gap:6px;
@@ -825,50 +826,10 @@
   }
   #ext-warning .btn { padding:6px 8px;border-radius:6px;background:#fff;border:1px solid #e6e6e6;cursor:pointer }
 
-  @media (min-width: 821px) and (max-width: 1420px) {
-    .toolbar {
-      grid-template-columns:auto auto;
-      grid-template-areas:
-        "tools actions"
-        "center center";
-      justify-content:space-between;
-      gap:8px 12px;
-    }
-    .toolbar-center {
-      width:100%;
-    }
-    .toolbar-center > #stroke-toolbar {
-      width:100%;
-      max-width:100%;
-      margin:0 !important;
-      flex-direction:row;
-      align-items:center;
-    }
-    .stroke-width-control,
-    .stroke-quick-actions {
-      width:max-content;
-      max-width:100%;
-      flex:0 0 auto;
-      min-width:0;
-      justify-content:center;
-    }
-    .stroke-settings-cluster {
-      width:max-content;
-      flex-direction:row;
-      align-items:center;
-      gap:8px;
-    }
-  }
-
   @media (max-width: 820px) {
     .toolbar{
       gap: 8px;
       padding-inline: 8px;
-      grid-template-columns:minmax(0,1fr);
-      grid-template-areas:
-        "tools"
-        "center"
-        "actions";
     }
     .toolbar-center {
       width:100%;
@@ -884,16 +845,28 @@
     }
     .stroke-width-control,
     .stroke-quick-actions {
-      width:100%;
       flex:0 0 auto;
       min-width:0;
       justify-content:center;
     }
     .stroke-settings-cluster {
       width:100%;
-      flex-direction:column;
-      align-items:stretch;
+      flex-direction:row;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:center;
       gap:8px;
+    }
+    .stroke-width-control {
+      width:max-content;
+      flex:0 1 auto;
+      max-width:100%;
+    }
+    .stroke-quick-actions {
+      width:max-content;
+      flex:0 0 auto;
+      min-width:max-content;
+      flex-wrap:nowrap;
     }
     .toolbar:not(.toolbar-has-options) .spacer {
       display:none;
@@ -936,6 +909,50 @@
     .responsive-icon-btn span {
       display: none;
     }
+  }
+
+  .toolbar.toolbar-two-rows {
+    grid-template-columns:auto auto;
+    grid-template-areas:
+      "tools actions"
+      "center center";
+    justify-content:space-between;
+  }
+  .toolbar.toolbar-three-rows {
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:
+      "tools"
+      "center"
+      "actions";
+    justify-items:stretch;
+  }
+  .toolbar.toolbar-three-rows .toolbar-tools,
+  .toolbar.toolbar-three-rows .toolbar-actions {
+    justify-content:center;
+  }
+  .toolbar.toolbar-measuring {
+    grid-template-columns:max-content max-content max-content !important;
+    grid-template-areas:"tools center actions" !important;
+    justify-content:start !important;
+  }
+  .toolbar.toolbar-measuring.toolbar-two-rows {
+    grid-template-columns:max-content max-content !important;
+    grid-template-areas:"tools actions" "center center" !important;
+  }
+  .toolbar.toolbar-measuring.toolbar-three-rows {
+    grid-template-columns:max-content !important;
+    grid-template-areas:"tools" "center" "actions" !important;
+  }
+  .toolbar.toolbar-measuring .toolbar-tools,
+  .toolbar.toolbar-measuring .toolbar-actions,
+  .toolbar.toolbar-measuring .toolbar-center {
+    width:max-content !important;
+  }
+  .toolbar.toolbar-measuring .toolbar-center > div {
+    width:max-content !important;
+  }
+  .toolbar.toolbar-measuring .toolbar-center > #stroke-toolbar {
+    max-width:none !important;
   }
 
   @media (max-width: 480px) {
@@ -1024,6 +1041,11 @@
   .toolbar-super-condensed #image-transparency label,
   .toolbar-super-condensed #text-toolbar label {
     display: none;
+  }
+
+  .toolbar.toolbar-condensed #toolbar-stroke-width,
+  .toolbar.toolbar-condensed #toolbar-text-bg-alpha {
+    width: 200px !important;
   }
 
 
@@ -2382,49 +2404,68 @@ function setTool(t){
                       clone.style.top = '-9999px';
                       clone.style.visibility = 'hidden';
                       clone.style.width = toolbar.clientWidth + 'px';
+                      clone.classList.add('toolbar-measuring');
                       document.body.appendChild(clone);
 
-                      // --- Use the clone to determine the required condensation level ---
-                      let condensationLevel = 0;
-
-                      // Reset clone to an expanded state to get a baseline
-                      clone.classList.remove('toolbar-condensed', 'toolbar-super-condensed');
-
-                      // Ensure quick colors and toolbars are properly visible for accurate space calculation
+                      // Use the most demanding toolbar panel to determine condensation and row layout.
+                      const panels = ['none', 'transparency', 'stroke', 'text'];
                       const quickColorsClone = clone.querySelector('#quick-stroke-colors');
                       const strokeToolbarClone = clone.querySelector('#stroke-toolbar');
+                      const transparencyClone = clone.querySelector('#image-transparency');
                       const textToolbarClone = clone.querySelector('#text-toolbar');
-                      
-                      // Show stroke toolbar & colors if they're visible in the real toolbar
-                      if (strokeToolbarClone && el('#stroke-toolbar').style.display !== 'none') {
-                          strokeToolbarClone.style.display = 'flex';
-                          if (quickColorsClone) quickColorsClone.style.display = 'flex';
-                      }
-                      
-                      // Show text toolbar if visible in the real toolbar
-                      if (textToolbarClone && el('#text-toolbar').style.display !== 'none') {
-                          textToolbarClone.style.display = 'flex';
+                      const showPanel = (panel, showQuickColors) => {
+                          transparencyClone.style.display = panel === 'transparency' ? 'flex' : 'none';
+                          strokeToolbarClone.style.display = panel === 'stroke' ? 'flex' : 'none';
+                          textToolbarClone.style.display = panel === 'text' ? 'flex' : 'none';
+                          quickColorsClone.style.display = panel === 'stroke' && showQuickColors ? 'flex' : 'none';
+                      };
+
+                      let condensationLevel = 0;
+                      clone.classList.remove(
+                          'toolbar-condensed',
+                          'toolbar-super-condensed',
+                          'toolbar-two-rows',
+                          'toolbar-three-rows'
+                      );
+                      for (const panel of panels) {
+                          showPanel(panel, true);
+                          let panelCondensation = 0;
+                          if (clone.scrollWidth > clone.clientWidth + 1) {
+                              panelCondensation = 1;
+                              clone.classList.add('toolbar-condensed');
+                          }
+                          if (clone.scrollWidth > clone.clientWidth + 1) {
+                              panelCondensation = 2;
+                          }
+                          if (clone.scrollWidth > clone.clientWidth + 1) {
+                              panelCondensation = 3;
+                              clone.classList.add('toolbar-super-condensed');
+                          }
+                          condensationLevel = Math.max(condensationLevel, panelCondensation);
+                          clone.classList.remove('toolbar-condensed', 'toolbar-super-condensed');
                       }
 
-                      // Check overflow on the clone in stages
-                      if (clone.scrollWidth > clone.clientWidth + 1) {
-                          condensationLevel = 1;
-                          clone.classList.add('toolbar-condensed');
+                      clone.classList.toggle('toolbar-condensed', condensationLevel >= 1);
+                      clone.classList.toggle('toolbar-super-condensed', condensationLevel >= 3);
+                      let requiredRows = 1;
+                      for (const panel of panels) {
+                          showPanel(panel, true);
+                          clone.classList.remove('toolbar-two-rows', 'toolbar-three-rows');
+                          if (clone.scrollWidth > clone.clientWidth + 1) {
+                              requiredRows = Math.max(requiredRows, 2);
+                              clone.classList.add('toolbar-two-rows');
+                              if (clone.scrollWidth > clone.clientWidth + 1) {
+                                  requiredRows = 3;
+                              }
+                          }
                       }
-
-                      // At level 2, hide quick colors if still overflowing
-                      if (clone.scrollWidth > clone.clientWidth + 1) {
-                          condensationLevel = 2;
-                          if (quickColorsClone) quickColorsClone.style.display = 'none';
-                      }
-                      
-                      // At level 3, full super-condensed mode
-                      if (clone.scrollWidth > clone.clientWidth + 1) {
-                          condensationLevel = 3;
-                          clone.classList.add('toolbar-super-condensed');
-                      }
-
-                      // --- Apply the final determined state to the REAL toolbar in one go ---
+                      const layoutMode = requiredRows === 3
+                          ? 'toolbar-three-rows'
+                          : requiredRows === 2
+                              ? 'toolbar-two-rows'
+                              : '';
+                      toolbar.classList.toggle('toolbar-two-rows', layoutMode === 'toolbar-two-rows');
+                      toolbar.classList.toggle('toolbar-three-rows', layoutMode === 'toolbar-three-rows');
                       toolbar.classList.toggle('toolbar-condensed', condensationLevel >= 1);
                       toolbar.classList.toggle('toolbar-super-condensed', condensationLevel >= 3);
 
@@ -2433,7 +2474,7 @@ function setTool(t){
                       const strokeToolbar = el('#stroke-toolbar');
 
                       if (quickColors && strokeToolbar && strokeToolbar.style.display !== 'none') {
-                          quickColors.style.display = (condensationLevel >= 2) ? 'none' : 'flex';
+                          quickColors.style.display = 'flex';
                       }
 
                       const measurementClone = toolbar.cloneNode(true);
