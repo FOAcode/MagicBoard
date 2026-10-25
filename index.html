@@ -5352,6 +5352,14 @@ function calculateSelectedBounds() {
 
 function updateSelectedBoundsOutline() {
   let outline = document.getElementById('selected-bounds-outline');
+  if (state.selectedIds.size === 1) {
+    const selectedNode = findNodeById(state.selectedIds.values().next().value);
+    if (selectedNode?.dataset.type === 'image' || selectedNode?.dataset.type === 'text') {
+      outline?.remove();
+      return;
+    }
+  }
+
   const bounds = calculateSelectedBounds();
   if (!bounds) {
     outline?.remove();
