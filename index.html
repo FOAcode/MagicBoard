@@ -1945,6 +1945,7 @@ function createSnapshot() {
       obj.text = p?.innerText || '';
       obj.width = parseFloat(width);
       obj.height = parseFloat(height);
+      obj.resized = n.dataset.resized === 'true';
       obj.style = {
         fontSize: p?.style.fontSize || null,
         bold: p?.style.fontWeight === 'bold',
@@ -2079,7 +2080,8 @@ function restoreSnapshot(snapshot) {
       if (existing) { try { existing.remove(); } catch(e) {} }
       
       const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
-        id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true
+        id: it.id, skipRefresh: true, skipSelect: true, skipFocus: true, skipHistory: true,
+        resized: it.resized
       });
       item.style.zIndex = it.z || 0;
 
@@ -2087,7 +2089,6 @@ function restoreSnapshot(snapshot) {
       const h = it.height || 100;
       item.style.width = w + 'px';
       item.style.height = h + 'px';
-
       const p = item.querySelector('.text-item');
       if (p && it.style) {
         p.style.fontSize = it.style.fontSize || '';
@@ -2653,6 +2654,7 @@ function createTextItem(text='', x=100, y=100, options = {}){
   wrapper.className = 'item';
   wrapper.dataset.id = uid;
   wrapper.dataset.type = 'text';
+  if (options.resized) wrapper.dataset.resized = 'true';
   wrapper.style.left = x + 'px'; wrapper.style.top = y + 'px';
   wrapper.style.zIndex = state.nextZ++; // --- MODIFIED: Use unified Z ---
   wrapper.style.minWidth = '80px';
@@ -2735,22 +2737,31 @@ function resizeTextItemToContent(wrapper, textDiv) {
   measurement.style.position = 'fixed';
   measurement.style.left = '-10000px';
   measurement.style.top = '0';
-  measurement.style.width = 'max-content';
   measurement.style.height = 'auto';
   measurement.style.maxWidth = 'none';
-  measurement.style.whiteSpace = 'pre';
   measurement.style.overflow = 'visible';
+  const hasFixedWidth = wrapper.dataset.resized === 'true';
+  const currentWidth = parseFloat(wrapper.style.width) || wrapper.offsetWidth || 80;
+  if (hasFixedWidth) {
+    measurement.style.width = currentWidth + 'px';
+    measurement.style.whiteSpace = 'pre-wrap';
+    measurement.style.wordWrap = 'break-word';
+  } else {
+    measurement.style.width = 'max-content';
+    measurement.style.whiteSpace = 'pre';
+  }
   document.body.appendChild(measurement);
 
   const measuredRect = measurement.getBoundingClientRect();
   const contentWidth = measuredRect.width;
   const contentHeight = measuredRect.height;
   measurement.remove();
-  const currentWidth = parseFloat(wrapper.style.width) || wrapper.offsetWidth || 80;
 
-  const widthWithBuffer = Math.ceil(contentWidth) + 4;
-  wrapper.style.width = Math.max(80, currentWidth, widthWithBuffer) + 'px';
-  wrapper.style.height = Math.max(28, contentHeight) + 'px';
+  if (!hasFixedWidth) {
+    const widthWithBuffer = Math.ceil(contentWidth) + 4;
+    wrapper.style.width = Math.max(80, currentWidth, widthWithBuffer) + 'px';
+  }
+  wrapper.style.height = Math.max(28, Math.ceil(contentHeight)) + 'px';
   updateSelectedBoundsOutline();
 }
 
@@ -3760,6 +3771,9 @@ function onResizeMove(e) {
     node.style.height = newHeight + 'px';
     node.style.left = newLeft + 'px';
     node.style.top = newTop + 'px';
+    if (newWidth !== resizeState.origW || newHeight !== resizeState.origH) {
+      node.dataset.resized = 'true';
+    }
 
     const textItem = node.querySelector('.text-item');
     if (textItem) {
@@ -4521,7 +4535,8 @@ window.addEventListener('paste', (ev)=>{
                 skipFocus: true,
                 width: it.width,
                 height: it.height,
-                style: it.style
+                style: it.style,
+                resized: it.resized
               });
               offset += 20;
             }
@@ -4728,6 +4743,7 @@ async function exportWhiteboard(){
     if (t === 'text') {
       const p = n.querySelector('.text-item');
       obj.text = p?.innerText || '';
+      obj.resized = n.dataset.resized === 'true';
       // Capture computed font size to ensure accuracy
       const computedStyle = window.getComputedStyle(p);
       obj.style = {
@@ -4871,7 +4887,9 @@ async function importWhiteboard(file) {
         }
 
       } else if (it.type === 'text') {
-        const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, { ...importOptions, id: it.id });
+        const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
+          ...importOptions, id: it.id, resized: it.resized
+        });
         item.style.zIndex = it.z;
         if (it.width) item.style.width = it.width + 'px';
         if (it.height) item.style.height = it.height + 'px';
@@ -6838,6 +6856,7 @@ async function copySelected() {
             text: textEl.innerText,
             width: parseFloat(node.style.width) || node.offsetWidth || 80,
             height: parseFloat(node.style.height) || node.offsetHeight || 28,
+            resized: node.dataset.resized === 'true',
             style: {
               fontSize: textEl.style.fontSize || null,
               bold: textEl.style.fontWeight === 'bold',
