@@ -3925,14 +3925,16 @@ function onBoardPointerDown(e) {
 
     const clickedOnItem = e.target.closest('.item, .stroke-wrapper, .stroke, .stroke-hit');
 
-    // Block move logic: if the user clicks inside the bounding box of the current selection, treat it as a group drag.
-    if (!clickedOnItem && state.tool === 'select' && state.selectedIds.size > 0) {
-      const selBounds = calculateSelectedBounds();
-      if (selBounds && e.clientX >= selBounds.minX && e.clientX <= selBounds.maxX &&
-          e.clientY >= selBounds.minY && e.clientY <= selBounds.maxY) {
+    // Drag the current selection from anywhere inside its visible bounds, including over an item.
+    if (state.tool === 'select' && state.selectedIds.size > 0 && !e.target.closest('.handle')) {
+      updateSelectedBoundsOutline();
+      const outlineRect = document.getElementById('selected-bounds-outline')?.getBoundingClientRect();
+      if (outlineRect && e.clientX >= outlineRect.left && e.clientX <= outlineRect.right &&
+          e.clientY >= outlineRect.top && e.clientY <= outlineRect.bottom) {
         const firstId = state.selectedIds.values().next().value;
         const anchor = findNodeById(firstId);
         if (anchor) {
+          e.stopPropagation();
           startDragHtml(anchor, e);
           return;
         }
@@ -5190,6 +5192,7 @@ function applyScale(){
     guideH.setAttribute('stroke-dasharray', `${4 * inverseScale} ${2 * inverseScale}`);
     guideV.setAttribute('stroke-dasharray', `${4 * inverseScale} ${2 * inverseScale}`);
   }
+  updateStrokeWidthPreview();
   updateSelectedBoundsOutline();
 }
 
@@ -5837,19 +5840,32 @@ const quickStrokeColors = el('#quick-stroke-colors');
 const quickStartArrow = el('#quick-start-arrow');
 const quickEndArrow = el('#quick-end-arrow'); // <-- NEW: Quick arrow ref
 
+function updateStrokeWidthPreview() {
+  const line = toolbarStrokePreview?.querySelector('line');
+  if (!line) return;
+  const visibleWidth = parseFloat(state.stroke.width) * state.scale;
+  const previewHeight = Math.max(24, visibleWidth + 4);
+  const centerY = previewHeight / 2;
+  toolbarStrokePreview.setAttribute('height', String(previewHeight));
+  toolbarStrokePreview.setAttribute('viewBox', `0 0 48 ${previewHeight}`);
+  line.setAttribute('y1', String(centerY));
+  line.setAttribute('y2', String(centerY));
+  line.setAttribute('stroke-width', String(visibleWidth));
+  line.setAttribute('stroke', state.stroke.color);
+  toolbarStrokePreview.setAttribute(
+    'aria-label',
+    `Line thickness preview: ${visibleWidth.toFixed(1)} pixels at current zoom`
+  );
+  checkToolbarOverflow();
+}
+
 function updateToolbarStrokeUI(){
   if(!toolbarStroke) return;
   const targetSliderPos = widthToSlider(state.stroke.width);
   if (toolbarStrokeSlider.value != targetSliderPos) toolbarStrokeSlider.value = targetSliderPos;
   const widthStr = parseFloat(state.stroke.width).toFixed(1);
   if (toolbarStrokeValue.textContent !== widthStr) toolbarStrokeValue.textContent = widthStr;
-  const line = toolbarStrokePreview.querySelector('line');
-  if(line){
-    const currentWidth = line.getAttribute('stroke-width');
-    const currentColor = line.getAttribute('stroke');
-    if (currentWidth !== state.stroke.width) line.setAttribute('stroke-width', state.stroke.width);
-    if (currentColor !== state.stroke.color) line.setAttribute('stroke', state.stroke.color);
-  }
+  updateStrokeWidthPreview();
   // update active color button
   if(quickStrokeColors){
     const mainBtn = quickStrokeColors.querySelector('#quick-stroke-colors-main');
@@ -5972,7 +5988,7 @@ if(toolbarStrokeSlider){
     const v = sliderToWidth(sliderPos);
     state.stroke.width = v;
     toolbarStrokeValue.textContent = v.toFixed(1);
-    const line = toolbarStrokePreview.querySelector('line'); if(line){ line.setAttribute('stroke-width', v); }
+    updateStrokeWidthPreview();
     // keep popup in sync
     strokeWidthInput.value = v;
     strokeWidthLabel.innerText = v.toFixed(1);
