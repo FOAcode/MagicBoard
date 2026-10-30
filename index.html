@@ -460,6 +460,79 @@
     user-select:none;
     border-radius:6px;
   }
+  .item.image-croppable{
+    overflow:visible;
+  }
+  .item.image-croppable img{
+    clip-path:inset(var(--crop-top, 0%) var(--crop-right, 0%) var(--crop-bottom, 0%) var(--crop-left, 0%));
+  }
+  .item.image-cropping{
+    outline:2px solid #6b7280;
+    outline-offset:2px;
+  }
+  .item.image-cropping .handle{
+    display:none;
+  }
+  .crop-edge{
+    position:absolute;
+    z-index:5;
+    display:block;
+    background:transparent;
+    touch-action:none;
+  }
+  .crop-edge::after{
+    content:"";
+    position:absolute;
+    background:rgba(75,85,99,0.78);
+    border:1px solid #fff;
+    border-radius:5px;
+  }
+  .crop-edge[data-crop-edge="top"],
+  .crop-edge[data-crop-edge="bottom"]{
+    height:12px;
+    cursor:ns-resize;
+  }
+  .crop-edge[data-crop-edge="top"]{top:0;}
+  .crop-edge[data-crop-edge="bottom"]{bottom:0;}
+  .crop-edge[data-crop-edge="top"]::after,
+  .crop-edge[data-crop-edge="bottom"]::after{
+    width:40px;
+    height:6px;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+  }
+  .crop-edge[data-crop-edge="left"],
+  .crop-edge[data-crop-edge="right"]{
+    width:12px;
+    cursor:ew-resize;
+  }
+  .crop-edge[data-crop-edge="left"]{left:0;}
+  .crop-edge[data-crop-edge="right"]{right:0;}
+  .crop-edge[data-crop-edge="left"]::after,
+  .crop-edge[data-crop-edge="right"]::after{
+    width:6px;
+    height:40px;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+  }
+  #exit-image-crop{
+    display:none;
+    position:absolute;
+    z-index:3000;
+    top:14px;
+    right:16px;
+    align-items:center;
+    gap:7px;
+    padding:8px 12px;
+    color:#374151;
+    background:#f3f4f6;
+    border:1px solid #d1d5db;
+    border-radius:7px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.12);
+    cursor:pointer;
+  }
   /* When an image is displayed larger than its natural size we can apply pixelation */
   .item img.pixelated { 
     image-rendering: pixelated;
@@ -1043,6 +1116,7 @@
     display: none;
   }
 
+  .toolbar.toolbar-condensed #transparency-slider,
   .toolbar.toolbar-condensed #toolbar-stroke-width,
   .toolbar.toolbar-condensed #toolbar-text-bg-alpha {
     width: 200px !important;
@@ -1283,6 +1357,12 @@
       <div id="image-transparency" style="display:none;align-items:center;gap:8px;margin:0 8px;">
         <label style="font-size:13px;font-weight:500;color:#374151;">Opacity:</label>
         <input type="range" id="transparency-slider" min="0" max="100" value="100" style="width:200px">
+        <button class="tool-btn icon-only" id="image-crop-btn" title="Crop image" aria-label="Crop image" aria-pressed="false" style="padding:6px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 3v12a3 3 0 0 0 3 3h12"/>
+            <path d="M18 21V9a3 3 0 0 0-3-3H3"/>
+          </svg>
+        </button>
         <span id="transparency-value" style="font-size:13px;min-width:40px;color:#6b7280;">100%</span>
         <button class="tool-btn icon-only" id="flip-horizontal-btn" title="Flip Horizontal" style="padding: 6px; margin-left: 4px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1477,6 +1557,12 @@
           </g>
         </svg>
       </div>
+      <button id="exit-image-crop" type="button" title="Exit cropping mode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+        Exit crop
+      </button>
     </div>
 
     <aside class="layers" id="layers-panel" aria-label="layers">
@@ -1938,6 +2024,7 @@ function createSnapshot() {
       obj.src = img?.src || '';
       obj.opacity = parseFloat(img?.style.opacity || '1');
       obj.transform = img?.style.transform || '';
+      if (n._imageCrop) obj.crop = { ...n._imageCrop };
       obj.width = Math.max(20, isNaN(w) ? 240 : w);
       obj.height = Math.max(20, isNaN(h) ? 180 : h);
     } else if (n.dataset.type === 'text') {
@@ -2073,6 +2160,7 @@ function restoreSnapshot(snapshot) {
       if (img && it.transform) {
         img.style.transform = it.transform;
       }
+      if (it.crop) applyImageCrop(item, it.crop);
     }
 
     else if (it.type === 'text') {
@@ -2214,6 +2302,7 @@ function snapshotItemsEqual(items1, items2) {
     if (a.width !== b.width || a.height !== b.height) return false;
     if (a.d !== b.d || a.stroke !== b.stroke) return false;
     if (a.text !== b.text || a.transform !== b.transform) return false;
+    if (JSON.stringify(a.crop || null) !== JSON.stringify(b.crop || null)) return false;
     // consider per-path transform differences
     if ((a.pathTransform || '') !== (b.pathTransform || '')) return false;
     
@@ -2600,6 +2689,7 @@ function createImageItem(src, x=80, y=80, w=240, options = {}){
       const width = parseFloat(wrapper.style.width || w || 240);
       wrapper.style.height = (width * img.naturalHeight / img.naturalWidth) + 'px';
     }
+    if (wrapper._imageCrop) applyImageCrop(wrapper, wrapper._imageCrop);
     if (!options.skipRefresh) refreshLayers();
     // Update pixelation indicator depending on whether the displayed size exceeds natural size
     try{ updateImagePixelation(wrapper); }catch(err){}
@@ -2981,7 +3071,184 @@ function generateCornerArc(p1, p2, p3, radiusMultiplier = 1.5) {
 }
 
 // --- Added addToSelection parameter to control whether to clear existing selection ---
+let cropModeNode = null;
+let imageCropDragState = null;
+
+function applyImageCrop(node, crop) {
+  const img = node?.querySelector('img');
+  if (!node || !img || !crop) return;
+
+  const frameIsCropped = crop.frameCropped === true;
+  const contentWidth = Math.max(20, frameIsCropped ? (crop.contentWidth || node.offsetWidth || 240) : (node.offsetWidth || crop.contentWidth || 240));
+  const contentHeight = Math.max(20, frameIsCropped ? (crop.contentHeight || node.offsetHeight || 180) : (node.offsetHeight || crop.contentHeight || 180));
+  const leftCrop = Math.max(0, Math.min(crop.left || 0, contentWidth - 20));
+  const topCrop = Math.max(0, Math.min(crop.top || 0, contentHeight - 20));
+  const rightCrop = Math.max(0, Math.min(crop.right || 0, contentWidth - leftCrop - 20));
+  const bottomCrop = Math.max(0, Math.min(crop.bottom || 0, contentHeight - topCrop - 20));
+  const normalizedCrop = { contentWidth, contentHeight, left: leftCrop, top: topCrop, right: rightCrop, bottom: bottomCrop, frameCropped: frameIsCropped };
+
+  node._imageCrop = normalizedCrop;
+  node.classList.add('image-croppable');
+  node.style.overflow = 'visible';
+  node.style.setProperty('--crop-left', `${leftCrop / contentWidth * 100}%`);
+  node.style.setProperty('--crop-top', `${topCrop / contentHeight * 100}%`);
+  node.style.setProperty('--crop-right', `${rightCrop / contentWidth * 100}%`);
+  node.style.setProperty('--crop-bottom', `${bottomCrop / contentHeight * 100}%`);
+
+  img.style.position = frameIsCropped && cropModeNode !== node ? 'absolute' : '';
+  img.style.maxWidth = frameIsCropped && cropModeNode !== node ? 'none' : '';
+  img.style.width = frameIsCropped && cropModeNode !== node ? contentWidth + 'px' : '';
+  img.style.height = frameIsCropped && cropModeNode !== node ? contentHeight + 'px' : '';
+  img.style.left = frameIsCropped && cropModeNode !== node ? -leftCrop + 'px' : '';
+  img.style.top = frameIsCropped && cropModeNode !== node ? -topCrop + 'px' : '';
+  img.style.objectFit = 'contain';
+  img.style.clipPath = '';
+
+  const cropRectWidth = contentWidth - leftCrop - rightCrop;
+  const cropRectHeight = contentHeight - topCrop - bottomCrop;
+
+  const topHandle = node.querySelector('.crop-edge[data-crop-edge="top"]');
+  const bottomHandle = node.querySelector('.crop-edge[data-crop-edge="bottom"]');
+  const leftHandle = node.querySelector('.crop-edge[data-crop-edge="left"]');
+  const rightHandle = node.querySelector('.crop-edge[data-crop-edge="right"]');
+  if (topHandle) {
+    topHandle.style.left = leftCrop + 'px';
+    topHandle.style.width = cropRectWidth + 'px';
+    topHandle.style.top = topCrop - 6 + 'px';
+  }
+  if (bottomHandle) {
+    bottomHandle.style.left = leftCrop + 'px';
+    bottomHandle.style.width = cropRectWidth + 'px';
+    bottomHandle.style.bottom = bottomCrop - 6 + 'px';
+  }
+  if (leftHandle) {
+    leftHandle.style.top = topCrop + 'px';
+    leftHandle.style.height = cropRectHeight + 'px';
+    leftHandle.style.left = leftCrop - 6 + 'px';
+  }
+  if (rightHandle) {
+    rightHandle.style.top = topCrop + 'px';
+    rightHandle.style.height = cropRectHeight + 'px';
+    rightHandle.style.right = rightCrop - 6 + 'px';
+  }
+}
+
+function exitImageCropMode() {
+  if (imageCropDragState) {
+    window.removeEventListener('pointermove', onImageCropPointerMove);
+    window.removeEventListener('pointerup', onImageCropPointerUp);
+    window.removeEventListener('pointercancel', onImageCropPointerUp);
+    imageCropDragState = null;
+  }
+  if (cropModeNode) {
+    const node = cropModeNode;
+    node.classList.remove('image-cropping');
+    node.querySelectorAll('.crop-edge').forEach(handle => handle.remove());
+    const crop = node._imageCrop;
+    if (crop) {
+      node.style.left = (parseFloat(node.style.left) + crop.left) + 'px';
+      node.style.top = (parseFloat(node.style.top) + crop.top) + 'px';
+      node.style.width = (crop.contentWidth - crop.left - crop.right) + 'px';
+      node.style.height = (crop.contentHeight - crop.top - crop.bottom) + 'px';
+      crop.frameCropped = true;
+    }
+    cropModeNode = null;
+    if (crop) applyImageCrop(node, crop);
+  }
+  const cropButton = el('#image-crop-btn');
+  if (cropButton) cropButton.setAttribute('aria-pressed', 'false');
+  const exitButton = el('#exit-image-crop');
+  if (exitButton) exitButton.style.display = 'none';
+}
+
+function enterImageCropMode(node) {
+  if (!node || node.dataset.type !== 'image') return;
+  if (cropModeNode === node) {
+    exitImageCropMode();
+    return;
+  }
+  exitImageCropMode();
+  if (node._imageCrop?.frameCropped) {
+    const crop = node._imageCrop;
+    node.style.left = (parseFloat(node.style.left) - crop.left) + 'px';
+    node.style.top = (parseFloat(node.style.top) - crop.top) + 'px';
+    node.style.width = crop.contentWidth + 'px';
+    node.style.height = crop.contentHeight + 'px';
+    crop.frameCropped = false;
+  }
+  if (!node._imageCrop) {
+    applyImageCrop(node, {
+      contentWidth: node.offsetWidth,
+      contentHeight: node.offsetHeight,
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0
+    });
+  }
+  cropModeNode = node;
+  node.classList.add('image-cropping');
+  ['top', 'right', 'bottom', 'left'].forEach(edge => {
+    const handle = document.createElement('div');
+    handle.className = 'crop-edge';
+    handle.dataset.cropEdge = edge;
+    handle.setAttribute('aria-label', `Drag to crop ${edge} edge`);
+    node.appendChild(handle);
+  });
+  applyImageCrop(node, node._imageCrop);
+  const cropButton = el('#image-crop-btn');
+  if (cropButton) cropButton.setAttribute('aria-pressed', 'true');
+  const exitButton = el('#exit-image-crop');
+  if (exitButton) exitButton.style.display = 'flex';
+}
+
+function startImageCropPointer(e, handle) {
+  e.preventDefault();
+  e.stopPropagation();
+  const node = handle.closest('.item');
+  if (!node?._imageCrop || cropModeNode !== node) return;
+  imageCropDragState = {
+    node,
+    edge: handle.dataset.cropEdge,
+    startClientX: e.clientX,
+    startClientY: e.clientY,
+    startCrop: { ...node._imageCrop }
+  };
+  window.addEventListener('pointermove', onImageCropPointerMove);
+  window.addEventListener('pointerup', onImageCropPointerUp);
+  window.addEventListener('pointercancel', onImageCropPointerUp);
+}
+
+function onImageCropPointerMove(e) {
+  if (!imageCropDragState) return;
+  const { node, edge, startClientX, startClientY, startCrop } = imageCropDragState;
+  const dx = (e.clientX - startClientX) / state.scale;
+  const dy = (e.clientY - startClientY) / state.scale;
+  const crop = { ...startCrop };
+  if (edge === 'left') crop.left = Math.max(0, Math.min(startCrop.left + dx, startCrop.contentWidth - startCrop.right - 20));
+  if (edge === 'right') crop.right = Math.max(0, Math.min(startCrop.right - dx, startCrop.contentWidth - startCrop.left - 20));
+  if (edge === 'top') crop.top = Math.max(0, Math.min(startCrop.top + dy, startCrop.contentHeight - startCrop.bottom - 20));
+  if (edge === 'bottom') crop.bottom = Math.max(0, Math.min(startCrop.bottom - dy, startCrop.contentHeight - startCrop.top - 20));
+  applyImageCrop(node, crop);
+}
+
+function onImageCropPointerUp() {
+  if (!imageCropDragState) return;
+  window.removeEventListener('pointermove', onImageCropPointerMove);
+  window.removeEventListener('pointerup', onImageCropPointerUp);
+  window.removeEventListener('pointercancel', onImageCropPointerUp);
+  const { node, startCrop } = imageCropDragState;
+  imageCropDragState = null;
+  const crop = node._imageCrop;
+  if (crop && ['left', 'top', 'right', 'bottom'].some(edge => crop[edge] !== startCrop[edge])) {
+    refreshLayers();
+    pushHistory();
+  }
+}
+
 function selectItem(idToSelect, addToSelection = false) {
+  const requestedNode = idToSelect ? findNodeById(idToSelect) : null;
+  if (cropModeNode && requestedNode !== cropModeNode) exitImageCropMode();
   // 1. Manage selection state
   if (!addToSelection) {
     clearSelection();
@@ -3104,6 +3371,7 @@ function selectItem(idToSelect, addToSelection = false) {
 }
 
 function clearSelection(){
+  exitImageCropMode();
   // --- Cache selectors to avoid repeated querySelectorAll ---
   const selectedElements = board.querySelectorAll('.item.selected, .stroke-wrapper.selected, .stroke.selected');
   selectedElements.forEach(n=>{
@@ -3711,7 +3979,7 @@ function startResizePointer(e){
   const startClientY = e.clientY;
   const origW = node.offsetWidth;
   const origH = node.offsetHeight;
-  resizeState = {node, startClientX, startClientY, origW, origH, resizeDir};
+  resizeState = {node, startClientX, startClientY, origW, origH, resizeDir, startCrop: node._imageCrop ? { ...node._imageCrop } : null};
   window.addEventListener('pointermove', onResizeMove);
   window.addEventListener('pointerup', onResizeUp);
 }
@@ -3737,7 +4005,10 @@ function onResizeMove(e) {
   if (node.dataset.type === 'image') {
     const img = node.querySelector('img');
     if (!img) return;
-    const aspect = img.naturalWidth / img.naturalHeight;
+    const crop = resizeState.startCrop;
+    const aspect = crop?.frameCropped
+      ? (crop.contentWidth - crop.left - crop.right) / (crop.contentHeight - crop.top - crop.bottom)
+      : img.naturalWidth / img.naturalHeight;
     
     // Images usually resize from the bottom-right for simplicity
     newWidth = Math.max(32, resizeState.origW + dx);
@@ -3745,6 +4016,19 @@ function onResizeMove(e) {
     
     node.style.width = newWidth + 'px';
     node.style.height = newHeight + 'px';
+    if (crop) {
+      const scaleX = newWidth / resizeState.origW;
+      const scaleY = newHeight / resizeState.origH;
+      applyImageCrop(node, {
+        contentWidth: crop.contentWidth * scaleX,
+        contentHeight: crop.contentHeight * scaleY,
+        left: crop.left * scaleX,
+        top: crop.top * scaleY,
+        right: crop.right * scaleX,
+        bottom: crop.bottom * scaleY,
+        frameCropped: crop.frameCropped
+      });
+    }
     try { updateImagePixelation(node); } catch(err) {}
   } 
   
@@ -4567,6 +4851,12 @@ function attachItemBehaviors(node){
       return;
     }
 
+    if (cropModeNode === node) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     e.stopPropagation();
 
     const addToSelection = e.shiftKey;
@@ -4723,6 +5013,7 @@ async function exportWhiteboard(){
 
     if (t === 'image') {
       const img = n.querySelector('img');
+      if (n._imageCrop) obj.crop = { ...n._imageCrop };
       if (img) {
         try {
           const res = await fetch(img.src);
@@ -4885,6 +5176,7 @@ async function importWhiteboard(file) {
         if (img && it.transform) {
           img.style.transform = it.transform;
         }
+        if (it.crop) applyImageCrop(item, it.crop);
 
       } else if (it.type === 'text') {
         const item = createTextItem(it.text || '', it.left ?? 80, it.top ?? 80, {
@@ -5038,6 +5330,11 @@ registerFileHandler();
 
 /* Event wiring */
 board.addEventListener('pointerdown', (e) => {
+  const cropHandle = e.target.closest?.('.crop-edge');
+  if (cropHandle) {
+    startImageCropPointer(e, cropHandle);
+    return;
+  }
   // Block immediately if this is a touch event with 2+ fingers (potential pinch)
   if (e.pointerType === 'touch' && e.touches && e.touches.length >= 2) {
     e.preventDefault();
@@ -6570,6 +6867,26 @@ const flipVerticalBtn = el('#flip-vertical-btn');
 if (flipVerticalBtn) {
   flipVerticalBtn.addEventListener('click', flipImageVertically);
 }
+
+const imageCropBtn = el('#image-crop-btn');
+if (imageCropBtn) {
+  imageCropBtn.addEventListener('click', () => {
+    if (cropModeNode) {
+      exitImageCropMode();
+      return;
+    }
+    const selectedImage = Array.from(state.selectedIds)
+      .map(id => findNodeById(id))
+      .find(node => node?.dataset.type === 'image');
+    if (selectedImage) {
+      if (state.selectedIds.size !== 1) selectItem(selectedImage.dataset.id);
+      enterImageCropMode(selectedImage);
+    }
+  });
+}
+
+const exitImageCropBtn = el('#exit-image-crop');
+if (exitImageCropBtn) exitImageCropBtn.addEventListener('click', exitImageCropMode);
 
 // --- Transparency Slider Wiring ---
 const transparencySliderEl = el('#transparency-slider');
