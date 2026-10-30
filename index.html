@@ -458,7 +458,7 @@
     object-fit: contain; /* keeps aspect ratio */
     pointer-events:none;
     user-select:none;
-    border-radius:6px;
+    border-radius:0;
   }
   .item.image-croppable{
     overflow:visible;
@@ -3073,6 +3073,7 @@ function generateCornerArc(p1, p2, p3, radiusMultiplier = 1.5) {
 // --- Added addToSelection parameter to control whether to clear existing selection ---
 let cropModeNode = null;
 let imageCropDragState = null;
+let imageCropStartState = null;
 
 function applyImageCrop(node, crop) {
   const img = node?.querySelector('img');
@@ -3142,6 +3143,7 @@ function exitImageCropMode() {
   }
   if (cropModeNode) {
     const node = cropModeNode;
+    const startState = imageCropStartState;
     node.classList.remove('image-cropping');
     node.querySelectorAll('.crop-edge').forEach(handle => handle.remove());
     const crop = node._imageCrop;
@@ -3154,6 +3156,29 @@ function exitImageCropMode() {
     }
     cropModeNode = null;
     if (crop) applyImageCrop(node, crop);
+    imageCropStartState = null;
+
+    if (crop && startState?.node === node) {
+      const startCrop = startState.crop || {
+        contentWidth: startState.width,
+        contentHeight: startState.height,
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0
+      };
+      const cropFields = ['contentWidth', 'contentHeight', 'left', 'top', 'right', 'bottom'];
+      const cropChanged = cropFields.some(field =>
+        Math.abs((crop[field] || 0) - (startCrop[field] || 0)) > 0.001
+      );
+      const frameChanged = ['left', 'top', 'width', 'height'].some(field =>
+        Math.abs((parseFloat(node.style[field]) || 0) - startState[field]) > 0.001
+      );
+      if (cropChanged || frameChanged) {
+        refreshLayers();
+        pushHistory();
+      }
+    }
   }
   const cropButton = el('#image-crop-btn');
   if (cropButton) cropButton.setAttribute('aria-pressed', 'false');
@@ -3168,6 +3193,14 @@ function enterImageCropMode(node) {
     return;
   }
   exitImageCropMode();
+  imageCropStartState = {
+    node,
+    left: parseFloat(node.style.left) || 0,
+    top: parseFloat(node.style.top) || 0,
+    width: parseFloat(node.style.width) || node.offsetWidth,
+    height: parseFloat(node.style.height) || node.offsetHeight,
+    crop: node._imageCrop ? { ...node._imageCrop } : null
+  };
   if (node._imageCrop?.frameCropped) {
     const crop = node._imageCrop;
     node.style.left = (parseFloat(node.style.left) - crop.left) + 'px';
@@ -3237,13 +3270,7 @@ function onImageCropPointerUp() {
   window.removeEventListener('pointermove', onImageCropPointerMove);
   window.removeEventListener('pointerup', onImageCropPointerUp);
   window.removeEventListener('pointercancel', onImageCropPointerUp);
-  const { node, startCrop } = imageCropDragState;
   imageCropDragState = null;
-  const crop = node._imageCrop;
-  if (crop && ['left', 'top', 'right', 'bottom'].some(edge => crop[edge] !== startCrop[edge])) {
-    refreshLayers();
-    pushHistory();
-  }
 }
 
 function selectItem(idToSelect, addToSelection = false) {
@@ -4973,6 +5000,23 @@ function changeZ(idstr, delta){
 
 // function reorderSvg() {} // No longer needed
 
+async function inferImageMimeType(blob, source = '') {
+  if (blob.type.startsWith('image/')) return blob.type;
+  const dataUrlType = source.match(/^data:(image\/[^;,]+)/i)?.[1];
+  if (dataUrlType) return dataUrlType;
+
+  const bytes = new Uint8Array(await blob.slice(0, 512).arrayBuffer());
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 6 && ['GIF87a', 'GIF89a'].includes(new TextDecoder().decode(bytes.slice(0, 6)))) return 'image/gif';
+  if (bytes.length >= 12 && new TextDecoder().decode(bytes.slice(0, 4)) === 'RIFF' && new TextDecoder().decode(bytes.slice(8, 12)) === 'WEBP') return 'image/webp';
+  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return 'image/bmp';
+
+  const text = new TextDecoder().decode(bytes).replace(/^\uFEFF/, '').trimStart();
+  if (/<svg(?:\s|>)/i.test(text)) return 'image/svg+xml';
+  return 'application/octet-stream';
+}
+
 /* Export/Import .wb (zip) Whiteboard State */
 async function exportWhiteboard(){
   const items = [];
@@ -5021,6 +5065,7 @@ async function exportWhiteboard(){
           const idx = imageBlobs.length;
           imageBlobs.push(blob);
           obj.imageIndex = idx;
+          obj.imageType = await inferImageMimeType(blob, img.src);
           obj.originalSrc = img.src;
           // Save opacity and transform information
           obj.opacity = parseFloat(img.style.opacity || '1');
@@ -5165,7 +5210,8 @@ async function importWhiteboard(file) {
         let url = it.originalSrc || '';
         if (imgBlobFile) {
           const b = await imgBlobFile.async('blob');
-          url = URL.createObjectURL(b);
+          const imageType = await inferImageMimeType(b, it.originalSrc || '');
+          url = URL.createObjectURL(new Blob([b], { type: imageType }));
         }
         const item = createImageItem(url, it.left ?? 80, it.top ?? 80, it.width ?? 240, {
           ...importOptions, id: it.id, opacity: it.opacity ?? 1
